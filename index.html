@@ -24,11 +24,27 @@
     #stage { margin:auto 0; display:flex; flex-direction:column; align-items:center; text-align:center; pointer-events:none; }
     #game-title { margin:0; font-size:clamp(28px,8vw,54px); letter-spacing:-.065em; line-height:.9; text-shadow:0 3px 28px #000; }
     #game-copy { max-width:315px; margin:10px 0 0; color:#edf2fa; font-size:14px; line-height:1.35; text-shadow:0 2px 10px #000; }
-    #dice { margin-top:22px; width:118px; height:118px; padding:15px; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); background:#f3f5f7; border-radius:22px; transform:rotate(-7deg); box-shadow:0 20px 48px rgba(0,0,0,.45); }
-    #dice.rolling { animation:roll .55s linear infinite; }
-    .pip { width:19px; height:19px; align-self:center; justify-self:center; border-radius:50%; background:#16202c; opacity:0; transform:scale(.5); transition:opacity .12s,transform .12s; }
-    .pip.on { opacity:1; transform:scale(1); }
-    @keyframes roll { 0%{transform:rotate(-7deg) scale(1)} 50%{transform:rotate(21deg) scale(.82)} 100%{transform:rotate(353deg) scale(1)} }
+    #dice { margin-top:30px; display:flex; gap:40px; perspective:900px; }
+    .die-slot { --h:46px; position:relative; width:92px; height:92px; }
+    .die-wrap, .die-tilt, .die { position:relative; width:100%; height:100%; transform-style:preserve-3d; }
+    .die-tilt { transform:rotateX(-22deg) rotateY(24deg); }
+    .die { transition:transform 1.15s cubic-bezier(.15,.75,.25,1); }
+    .die::before, .die::after, .core { content:""; position:absolute; inset:3px; border-radius:10%; background:#e4dccb; }
+    .die::before { transform:rotateX(90deg); }
+    .die::after { transform:rotateY(90deg); }
+    .face { position:absolute; inset:0; padding:13%; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); border-radius:17%; backface-visibility:hidden;
+      background:radial-gradient(circle at 30% 25%,#fffdf8 0,#f1ebdf 55%,#d8cfbd 100%);
+      box-shadow:inset 0 0 10px rgba(80,60,30,.28), inset 2px 2px 2px rgba(255,255,255,.9), inset -2px -2px 3px rgba(90,70,40,.25); }
+    .pip { width:74%; aspect-ratio:1; place-self:center; border-radius:50%; visibility:hidden;
+      background:radial-gradient(circle at 38% 32%,#4b5058 0,#0c0e11 70%);
+      box-shadow:inset 0 2px 3px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.85); }
+    .pip.on { visibility:visible; }
+    .face.one .pip { width:100%; background:radial-gradient(circle at 38% 32%,#ff6b6b 0,#a10f1a 72%); }
+    .shadow { position:absolute; left:6%; right:6%; bottom:-26px; height:18px; border-radius:50%; background:radial-gradient(rgba(0,0,0,.6),transparent 70%); filter:blur(2px); }
+    .die-slot.rolling .die-wrap { animation:hop 1.15s ease-out; }
+    .die-slot.rolling .shadow { animation:shade 1.15s ease-out; }
+    @keyframes hop { 0%,50%,80%,100%{transform:translateY(0)} 25%{transform:translateY(-120px)} 65%{transform:translateY(-36px)} 90%{transform:translateY(-8px)} }
+    @keyframes shade { 0%,50%,80%,100%{transform:none;opacity:1} 25%{transform:scale(.45);opacity:.3} 65%{transform:scale(.8);opacity:.7} }
     #rps { display:none; width:min(440px,100%); margin-top:18px; }
     #rps.show { display:block; }
     #gesture { display:inline-block; min-width:210px; padding:14px 17px; border:1px solid rgba(201,255,74,.6); border-radius:14px; background:rgba(2,6,9,.73); color:var(--lime); font-size:20px; font-weight:900; letter-spacing:-.03em; }
@@ -55,8 +71,8 @@
 
       <section id="stage" aria-live="polite">
         <h2 id="game-title">Zar AR</h2>
-        <p id="game-copy">Pornește camera, apoi aruncă zarul peste lumea reală.</p>
-        <div id="dice" aria-label="Zar virtual"></div>
+        <p id="game-copy">Pornește camera, apoi aruncă zarurile peste lumea reală.</p>
+        <div id="dice" aria-label="Două zaruri virtuale"></div>
         <div id="rps">
           <div id="gesture">Caut mâna ta</div>
           <p id="result">Arată piatră, hârtie sau foarfecă.</p>
@@ -71,7 +87,7 @@
         <div class="actions">
           <button id="camera-button">Pornește camera</button>
           <button id="flip-button" disabled>Schimbă camera</button>
-          <button id="play-button" class="primary" disabled>Aruncă zarul</button>
+          <button id="play-button" class="primary" disabled>Aruncă zarurile</button>
         </div>
         <p id="footer-note">Merge în browser pe laptop și telefon. Camera cere localhost sau HTTPS.</p>
       </section>
@@ -103,12 +119,38 @@
     let lastVideoTime = -1;
 
     const pipPositions = { 1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] };
-    for (let i = 0; i < 9; i += 1) { const pip = document.createElement('span'); pip.className = 'pip'; dice.append(pip); }
+    // Fețe opuse însumează 7, ca la zarul real
+    const faceTransforms = { 1:'', 6:'rotateY(180deg)', 3:'rotateY(90deg)', 4:'rotateY(-90deg)', 2:'rotateX(90deg)', 5:'rotateX(-90deg)' };
+    // [rotX, rotY] care aduce fața respectivă spre privitor
+    const showFace = { 1:[0,0], 6:[0,180], 3:[0,-90], 4:[0,90], 2:[-90,0], 5:[90,0] };
 
-    function renderDice(value) {
-      [...dice.children].forEach((pip, index) => pip.classList.toggle('on', pipPositions[value].includes(index)));
+    function createDie() {
+      const slot = document.createElement('div');
+      slot.className = 'die-slot';
+      slot.innerHTML = '<div class="shadow"></div><div class="die-wrap"><div class="die-tilt"><div class="die"><div class="core"></div></div></div></div>';
+      const cube = slot.querySelector('.die');
+      for (const [value, transform] of Object.entries(faceTransforms)) {
+        const face = document.createElement('div');
+        face.className = value === '1' ? 'face one' : 'face';
+        face.style.transform = `${transform} translateZ(var(--h))`;
+        for (let i = 0; i < 9; i += 1) { const pip = document.createElement('span'); pip.className = pipPositions[value].includes(i) ? 'pip on' : 'pip'; face.append(pip); }
+        cube.append(face);
+      }
+      dice.append(slot);
+      return { slot, cube, rx: 0, ry: 0 };
     }
-    renderDice(5);
+    const dicePair = [createDie(), createDie()];
+
+    function setDie(die, value, spins) {
+      const [x, y] = showFace[value];
+      // multiplii de 360° dau rostogolirea; orientarea finală rămâne fața aleasă
+      die.rx = Math.ceil(die.rx / 360) * 360 + spins * 360 + x;
+      die.ry = Math.ceil(die.ry / 360) * 360 + spins * 360 + y;
+      const wobble = Math.random() * 16 - 8;
+      die.cube.style.transform = `rotateZ(${wobble}deg) rotateX(${die.rx}deg) rotateY(${die.ry}deg)`;
+    }
+    setDie(dicePair[0], 5, 0);
+    setDie(dicePair[1], 2, 0);
 
     async function startCamera() {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -202,9 +244,21 @@
       return win ? 'Ai câștigat!' : 'Calculatorul câștigă';
     }
     function rollDice() {
-      dice.classList.add('rolling');
       playButton.disabled = true;
-      setTimeout(() => { renderDice(Math.floor(Math.random() * 6) + 1); dice.classList.remove('rolling'); playButton.disabled = false; }, 760);
+      copy.textContent = 'Se rostogolesc…';
+      const values = dicePair.map(die => {
+        const value = Math.floor(Math.random() * 6) + 1;
+        die.slot.classList.remove('rolling');
+        void die.slot.offsetWidth; // repornește animația de săritură
+        die.slot.classList.add('rolling');
+        setDie(die, value, 2 + Math.floor(Math.random() * 2));
+        return value;
+      });
+      setTimeout(() => {
+        const [a, b] = values;
+        copy.textContent = `${a} + ${b} = ${a + b}${a === b ? ' — dublă!' : ''}`;
+        playButton.disabled = false;
+      }, 1150);
     }
     function playRps() {
       if (!latestGesture) { result.textContent = 'Arată un gest în cameră, apoi apasă din nou.'; return; }
@@ -216,10 +270,10 @@
       document.querySelectorAll('[data-game]').forEach(button => button.classList.toggle('selected', button.dataset.game === game));
       const isDice = game === 'dice';
       title.textContent = isDice ? 'Zar AR' : 'Piatra–Hârtie–Foarfecă';
-      copy.textContent = isDice ? 'Aruncă zarul peste lumea reală.' : 'Arată mâna camerei. Aplicația recunoaște piatra, hârtia și foarfeca.';
-      dice.style.display = isDice ? 'grid' : 'none';
+      copy.textContent = isDice ? 'Aruncă zarurile peste lumea reală.' : 'Arată mâna camerei. Aplicația recunoaște piatra, hârtia și foarfeca.';
+      dice.style.display = isDice ? 'flex' : 'none';
       rps.classList.toggle('show', !isDice);
-      playButton.textContent = isDice ? 'Aruncă zarul' : 'Joacă runda';
+      playButton.textContent = isDice ? 'Aruncă zarurile' : 'Joacă runda';
       if (!isDice && !landmarker) gesture.textContent = 'Pornește camera pentru recunoaștere';
     }
 

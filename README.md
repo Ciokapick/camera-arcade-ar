@@ -2,7 +2,7 @@
 
 Două jocuri web care folosesc camera laptopului sau telefonului:
 
-- **Zar AR**: un zar virtual apare peste imaginea camerei.
+- **Zar AR**: două zaruri 3D realiste se rostogolesc peste imaginea camerei și afișează suma.
 - **Piatra–Hârtie–Foarfecă**: aplicația detectează mâna cu MediaPipe și recunoaște gesturile de bază.
 
 ## Rulare pe laptop
