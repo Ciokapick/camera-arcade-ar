@@ -3,7 +3,8 @@
 Două jocuri web care folosesc camera laptopului sau telefonului:
 
 - **Zar AR**: două zaruri 3D realiste se rostogolesc peste imaginea camerei și afișează suma.
-- **Piatra–Hârtie–Foarfecă**: aplicația detectează mâna cu MediaPipe și recunoaște gesturile de bază.
+- **Zaruri pe masă (AR real)**: pe Android + Chrome, WebXR detectează suprafața mesei, iar zarurile cad pe ea cu fizică reală și umbră.
+- **Piatra–Hârtie–Foarfecă**: doi jucători, MediaPipe urmărește două mâini; runda pornește singură când ambele mâini sunt în cadru.
 
 ## Rulare pe laptop
 
