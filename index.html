@@ -59,10 +59,17 @@
     #score { margin:4px 0 0; color:var(--muted); font-size:13px; font-weight:800; }
     #table-row { display:none; }
     #table-row.show { display:flex; }
-    #xr-overlay { display:none; position:fixed; inset:0; pointer-events:none; font-family:inherit; }
+    #slam-root { display:none; position:fixed; inset:0; z-index:50; background:#000; overflow:hidden; }
+    #slam-root.show { display:block; }
+    .slam-layer { position:absolute; inset:0; width:100%; height:100%; }
+    .slam-video { position:absolute; width:1px; height:1px; opacity:0; }
+    #xr-overlay { display:none; position:fixed; inset:0; z-index:60; pointer-events:none; font-family:inherit; }
     #xr-overlay.show { display:block; }
-    #xr-status { position:absolute; left:16px; right:16px; bottom:max(84px,env(safe-area-inset-bottom)); padding:12px 14px; border-radius:14px; background:var(--panel); color:#fff; font-size:15px; font-weight:800; text-align:center; }
-    #xr-exit { position:absolute; top:max(16px,env(safe-area-inset-top)); right:16px; flex:none; padding:0 16px; pointer-events:auto; }
+    #xr-status { position:absolute; left:16px; right:16px; bottom:max(40px,env(safe-area-inset-bottom)); padding:12px 14px; border-radius:14px; background:var(--panel); color:#fff; font-size:15px; font-weight:800; text-align:center; }
+    #xr-overlay[data-state="found"] #xr-status { color:var(--lime); }
+    #xr-top { position:absolute; top:max(16px,env(safe-area-inset-top)); left:16px; right:16px; display:flex; justify-content:flex-end; gap:8px; }
+    #xr-top button { flex:none; padding:0 16px; pointer-events:auto; }
+    #xr-overlay[data-state="scanning"] #xr-replace { display:none; }
     @media (min-width:700px) { #ui { padding:24px; } #bottom { margin-bottom:4px; } }
   </style>
   <script type="importmap">
@@ -105,14 +112,18 @@
           <button id="play-button" class="primary" disabled>Aruncă zarurile</button>
         </div>
         <div class="actions" id="table-row">
-          <button id="table-button" class="primary">🪑 Zaruri pe masă (AR real)</button>
+          <button id="table-button" class="primary">🪑 Zaruri pe masă (AR)</button>
         </div>
-        <p id="footer-note">Merge în browser pe laptop și telefon. Zaruri pe masă: Android + Chrome. Camera cere HTTPS.</p>
+        <p id="footer-note">Merge în browser pe laptop și telefon. Zaruri pe masă: iPhone și Android. Camera cere HTTPS.</p>
       </section>
     </div>
   </main>
+  <div id="slam-root"></div>
   <div id="xr-overlay">
-    <button id="xr-exit">Ieși din AR</button>
+    <div id="xr-top">
+      <button id="xr-replace">Mută masa</button>
+      <button id="xr-exit">Ieși din AR</button>
+    </div>
     <div id="xr-status"></div>
   </div>
 
@@ -139,6 +150,8 @@
     const xrOverlay = document.querySelector('#xr-overlay');
     const xrStatus = document.querySelector('#xr-status');
     const xrExit = document.querySelector('#xr-exit');
+    const xrReplace = document.querySelector('#xr-replace');
+    const slamRoot = document.querySelector('#slam-root');
     let currentGame = 'dice';
     let landmarker;
     let cameraStarted = false;
@@ -210,11 +223,13 @@
     async function initializeHandTracking() {
       try {
         const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
-        landmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: 'GPU' },
+        const create = delegate => HandLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate },
           runningMode: 'VIDEO',
           numHands: 2
         });
+        // GPU e mai rapid, dar pe unele iPhone-uri nu pornește; atunci mergem pe CPU
+        landmarker = await create('GPU').catch(() => create('CPU'));
         detectHand();
       } catch (error) {
         console.warn('Hand tracking indisponibil', error);
@@ -335,29 +350,47 @@
       if (!isDice && !landmarker) gesture.textContent = 'Pornește camera pentru recunoaștere';
     }
 
-    // Zaruri pe masă (WebXR). three.js + fizica se încarcă doar când intri în AR.
-    let tableSupported = false;
-    navigator.xr?.isSessionSupported('immersive-ar').then(ok => { tableSupported = ok; setGame(currentGame); }).catch(() => {});
-    xrExit.addEventListener('beforexrselect', event => event.preventDefault()); // tap pe buton ≠ aruncare
+    // Zaruri pe masă: WebXR pe Android, AlvaAR (SLAM în browser) pe iPhone și restul.
+    // three.js, fizica și AlvaAR se încarcă doar când intri în AR.
+    // ?test-video=URL rulează modul SLAM pe un video înregistrat (pentru teste fără cameră)
+    const testVideo = new URLSearchParams(location.search).get('test-video');
+    const tableSupported = !!(navigator.xr || navigator.mediaDevices?.getUserMedia || testVideo);
+    let tableSession = null;
+    for (const button of [xrExit, xrReplace]) button.addEventListener('beforexrselect', event => event.preventDefault()); // tap pe buton ≠ aruncare
+    xrExit.addEventListener('click', () => tableSession?.end());
+    xrReplace.addEventListener('click', () => tableSession?.replace());
     tableButton.addEventListener('click', async () => {
-      // WebXR are nevoie de cameră pentru el, deci oprim stream-ul nostru
+      // iOS cere permisiunea pentru giroscop direct din tap (înainte de orice await)
+      window.DeviceOrientationEvent?.requestPermission?.().catch(() => {});
+      // AR-ul are nevoie de cameră pentru el, deci oprim stream-ul nostru
       video.srcObject?.getTracks().forEach(track => track.stop());
       cameraStarted = false;
       cameraButton.disabled = false; cameraButton.textContent = 'Pornește camera';
       state.textContent = 'Camera oprită'; state.classList.remove('live');
+      tableButton.disabled = true;
       xrOverlay.classList.add('show');
+      const options = {
+        overlay: xrOverlay,
+        root: slamRoot,
+        videoUrl: testVideo,
+        status: text => { xrStatus.textContent = text; },
+        setState: value => { xrOverlay.dataset.state = value; },
+        onEnd: () => { xrOverlay.classList.remove('show'); slamRoot.classList.remove('show'); tableSession = null; tableButton.disabled = false; },
+      };
       try {
-        const { startTableDice } = await import('./xr-dice.js');
-        const session = await startTableDice({
-          overlay: xrOverlay,
-          status: text => { xrStatus.textContent = text; },
-          onEnd: () => xrOverlay.classList.remove('show'),
-        });
-        xrExit.onclick = () => session.end();
+        xrStatus.textContent = 'Pornesc AR-ul…';
+        const tableDice = await import('./table-dice.js');
+        if (!testVideo && await tableDice.webXRSupported()) {
+          tableSession = await tableDice.startWebXR(options);
+        } else {
+          slamRoot.classList.add('show');
+          tableSession = await tableDice.startSlam(options);
+        }
       } catch (error) {
         console.error(error);
-        xrOverlay.classList.remove('show');
-        copy.textContent = 'Nu am putut porni AR-ul pe masă pe acest dispozitiv.';
+        options.onEnd();
+        slamRoot.replaceChildren();
+        copy.textContent = 'Nu am putut porni AR-ul pe masă: ' + (error.message || error);
       }
     });
 
@@ -372,6 +405,7 @@
       scoreLine.textContent = 'Stânga 0 – 0 Dreapta';
     });
     document.querySelectorAll('[data-game]').forEach(button => button.addEventListener('click', () => setGame(button.dataset.game)));
+    setGame(currentGame);
   </script>
 </body>
 </html>
