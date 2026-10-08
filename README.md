@@ -2,7 +2,7 @@
 
 Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), singur sau cu prietenii:
 
-- **Barbut**: doi zari 3D cu fizică reală; pe rând, cea mai mare sumă ia runda (la egalitate aruncă din nou doar cei la egalitate).
+- **Barbut**: două zaruri 3D cu fizică reală; pe rând, cea mai mare sumă ia runda (la egalitate aruncă din nou doar cei la egalitate).
 - **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din cameră (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru. Singur pe telefon: doi jucători, câte o mână.
 - **Nu te supăra, frate**: 2–4 jucători, fiecare cu culoarea aleasă, tabla 3D pe masă.
 - **Jenga**: turn de 54 de piese pe masă; pe rând tragi o piesă, ea urcă sus; cine dărâmă turnul pierde. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
