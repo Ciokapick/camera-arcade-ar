@@ -1,0 +1,136 @@
+// Turnul de Jenga în 3D: piese din lemn, piesa trasă alunecă afară și urcă sus, iar la final turnul cade fizic.
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import * as CANNON from 'cannon-es';
+import { L, W, H, slotPose, axisOf, collapse } from './jenga.js';
+
+function woodTexture(seed) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const g = canvas.getContext('2d');
+  let t = seed;
+  const rand = () => ((t = (t * 9301 + 49297) % 233280) / 233280);
+  g.fillStyle = `hsl(${32 + rand() * 6}, ${45 + rand() * 10}%, ${68 + rand() * 8}%)`;
+  g.fillRect(0, 0, 256, 64);
+  // fibra lemnului
+  for (let i = 0; i < 26; i++) {
+    g.strokeStyle = `rgba(110, 70, 30, ${0.08 + rand() * 0.12})`;
+    g.lineWidth = 1 + rand() * 2;
+    g.beginPath();
+    const y = rand() * 64;
+    g.moveTo(0, y);
+    for (let x = 0; x <= 256; x += 32) g.lineTo(x, y + Math.sin(x / 40 + rand() * 6) * 3);
+    g.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+const poseToMesh = (mesh, p) => {
+  mesh.position.set(p[0], p[1], p[2]);
+  mesh.quaternion.set(p[3], p[4], p[5], p[6]);
+};
+
+export function createJenga() {
+  const group = new THREE.Group();
+  const geometry = new RoundedBoxGeometry(L, H, W, 2, 0.0012);
+  const textures = Array.from({ length: 6 }, (_, i) => woodTexture(i * 977 + 13));
+  const blocks = Array.from({ length: 54 }, (_, i) => {
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ map: textures[i % 6], roughness: 0.7 }));
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.userData.index = i;
+    group.add(mesh);
+    return mesh;
+  });
+
+  let slots = null, selected = null, anim = null, lastSeq = null, time = 0, fallen = false;
+  const restPose = i => slotPose(slots[i].level, slots[i].slot);
+
+  function snap() {
+    blocks.forEach((mesh, i) => poseToMesh(mesh, restPose(i)));
+  }
+
+  return {
+    group,
+    footprint: 0.07,
+    screen: { target: [0, 0.14, 0], elevation: 0.35, distance: 0.62 },
+    get busy() { return !!anim; },
+    // aplică starea; o tragere nouă (last.seq) se animă: piesa iese, urcă sus, iar dacă turnul cade — cade
+    setState(j) {
+      const fresh = slots === null;
+      slots = j.slots;
+      if (!fresh && j.last && j.last.seq !== lastSeq) {
+        lastSeq = j.last.seq;
+        const { block, dir, from, fell } = j.last;
+        anim = { t: 0, i: block, start: slotPose(from.level, from.slot), axis: axisOf(from.level), dir, end: restPose(block), fell, slotsAfter: j.slots };
+        return;
+      }
+      lastSeq = j.last?.seq ?? null;
+      if (anim) return;
+      if (j.phase === 'over') {
+        // turnul căzut rămâne căzut (dacă intri în cameră după cădere, îl vezi căzând)
+        if (!fallen) { fallen = true; anim = { t: 0, frames: collapse(CANNON, j.slots, j.moves + 1) }; }
+        return;
+      }
+      fallen = false;
+      snap();
+    },
+    select(index) {
+      if (selected !== null) blocks[selected].material.emissive.setHex(0x000000);
+      selected = index;
+      if (index !== null) blocks[index].material.emissive.setHex(0x3a5a00);
+    },
+    get selected() { return selected; },
+    pick(raycaster) {
+      const hit = raycaster.intersectObjects(blocks, false)[0];
+      return hit ? hit.object.userData.index : null;
+    },
+    blockPosition: i => new THREE.Vector3(...restPose(i).slice(0, 3)),
+    // întoarce true o singură dată, când s-a terminat animația
+    update(dt) {
+      time += dt;
+      if (!anim) {
+        if (selected !== null) {
+          // piesa aleasă iese puțin din turn și „respiră”
+          const p = restPose(selected), a = axisOf(slots[selected].level), k = 0.004 + Math.sin(time * 5) * 0.002;
+          blocks[selected].position.set(p[0] + a[0] * k, p[1], p[2] + a[2] * k);
+        }
+        return false;
+      }
+      anim.t += dt;
+      if (anim.frames) {
+        // prăbușire: cadre la 30 pe secundă
+        const f = anim.frames[Math.min(anim.frames.length - 1, Math.floor(anim.t * 30))];
+        f.forEach((p, i) => poseToMesh(blocks[i], p));
+        if (anim.t * 30 >= anim.frames.length) { anim = null; return true; }
+        return false;
+      }
+      const mesh = blocks[anim.i];
+      const OUT = 0.6, CARRY = 0.6;
+      if (anim.t < OUT) {
+        const d = (anim.t / OUT) * L * 1.25 * anim.dir;
+        mesh.position.set(anim.start[0] + anim.axis[0] * d, anim.start[1], anim.start[2] + anim.axis[2] * d);
+        mesh.quaternion.set(anim.start[3], anim.start[4], anim.start[5], anim.start[6]);
+      } else if (anim.t < OUT + CARRY) {
+        const k = (anim.t - OUT) / CARRY;
+        const d = L * 1.25 * anim.dir;
+        const from = new THREE.Vector3(anim.start[0] + anim.axis[0] * d, anim.start[1], anim.start[2] + anim.axis[2] * d);
+        const to = new THREE.Vector3(anim.end[0], anim.end[1], anim.end[2]);
+        mesh.position.lerpVectors(from, to, k);
+        mesh.position.y += Math.sin(k * Math.PI) * 0.06;
+        mesh.quaternion.slerpQuaternions(new THREE.Quaternion(...anim.start.slice(3)), new THREE.Quaternion(...anim.end.slice(3)), k);
+      } else if (anim.fell) {
+        // a ajuns sus — și turnul cade
+        fallen = true;
+        anim = { t: 0, frames: collapse(CANNON, anim.slotsAfter, lastSeq) };
+      } else {
+        snap();
+        anim = null;
+        return true;
+      }
+      return false;
+    },
+  };
+}

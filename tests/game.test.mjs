@@ -177,3 +177,64 @@ test('Nu te supăra: om + 2 calculatori, ceasul gazdei duce partida până la ca
   }
   assert.equal(r.ludo.phase, 'over');
 });
+
+test('X și 0: pe rând, X începe, câștig pe o linie de 4', () => {
+  let r = reduce(room(), { type: 'select', game: 'xo' }, 'h');
+  assert.equal(reduce(r, { type: 'place', cell: 0 }, 'a'), r, 'O nu începe');
+  for (const [cell, who] of [[0, 'h'], [16, 'a'], [1, 'h'], [17, 'a'], [2, 'h'], [18, 'a']]) r = reduce(r, { type: 'place', cell }, who);
+  assert.equal(reduce(r, { type: 'place', cell: 0 }, 'h'), r, 'celulă ocupată');
+  r = reduce(r, { type: 'place', cell: 3 }, 'h');
+  assert.equal(r.xo.winner, 'h');
+  assert.deepEqual([...r.xo.line].sort((a, b) => a - b), [0, 1, 2, 3]);
+  assert.equal(reduce(r, { type: 'place', cell: 40 }, 'a'), r, 'jocul s-a terminat');
+});
+
+test('X și 0 cu calculatorul: partida se termină', () => {
+  let r = newRoom({ id: 'h', name: 'Denis' });
+  r = reduce(r, { type: 'add-bot' }, 'h');
+  r = reduce(r, { type: 'add-bot' }, 'h');
+  r = reduce(r, { type: 'select', game: 'xo' }, 'h');
+  // gazda e X, primul calculator e O; gazda joacă și ea ca un calculator
+  const memo = {};
+  let now = 0;
+  for (let i = 0; i < 200 && !r.xo.winner; i++) {
+    now += 1000;
+    if (r.xo.players[r.xo.turn] === 'h') r = reduce(r, { type: 'place', cell: r.xo.cells.indexOf(null) }, 'h');
+    else for (const { action, from } of hostTimers(r, now, memo)) r = reduce(r, action, from);
+  }
+  assert.ok(r.xo.winner);
+});
+
+test('Jenga: pe rând; dacă turnul nu mai stă, cine a tras pierde', () => {
+  let r = reduce(room(), { type: 'select', game: 'jenga' }, 'h');
+  const at = (level, slot) => r.jenga.slots.findIndex(s => s.level === level && s.slot === slot);
+  assert.equal(reduce(r, { type: 'pull', block: at(4, 1), dir: 1, luck: 0.9 }, 'a'), r, 'nu e rândul Anei');
+  assert.equal(reduce(r, { type: 'pull', block: at(17, 1), dir: 1, luck: 0.9 }, 'h'), r, 'nu din vârf');
+  r = reduce(r, { type: 'pull', block: at(4, 1), dir: 1, luck: 0.9 }, 'h');
+  assert.equal(r.jenga.phase, 'pull');
+  assert.equal(r.jenga.last.fell, false);
+  r = reduce(r, { type: 'pull', block: at(4, 0), dir: -1, luck: 0.9 }, 'a');
+  assert.equal(r.jenga.phase, 'over');
+  assert.equal(r.jenga.loser, 'a');
+});
+
+test('Jenga: riscul — ghinionul sub risc dărâmă turnul', () => {
+  let r = reduce(room(), { type: 'select', game: 'jenga' }, 'h');
+  const at = (level, slot) => r.jenga.slots.findIndex(s => s.level === level && s.slot === slot);
+  r = reduce(r, { type: 'pull', block: at(2, 1), dir: 1, luck: 0.001 }, 'h');
+  assert.equal(r.jenga.loser, 'h', 'luck 0.001 < risc 1%');
+});
+
+test('Jenga cu calculatorul: el trage singur prin ceasul gazdei', () => {
+  let r = newRoom({ id: 'h', name: 'Denis' });
+  r = reduce(r, { type: 'add-bot' }, 'h');
+  r = reduce(r, { type: 'select', game: 'jenga' }, 'h');
+  const at = (level, slot) => r.jenga.slots.findIndex(s => s.level === level && s.slot === slot);
+  r = reduce(r, { type: 'pull', block: at(3, 1), dir: 1, luck: 0.9 }, 'h');
+  const memo = {};
+  hostTimers(r, 0, memo, () => 0.5);
+  const [act] = hostTimers(r, 3000, memo, () => 0.5);
+  r = reduce(r, act.action, act.from);
+  assert.equal(r.jenga.moves, 2);
+  assert.equal(r.jenga.last.by, r.players[1].id);
+});

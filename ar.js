@@ -126,6 +126,7 @@ export async function openStage({ root, overlay, mode, content, status, setState
       : mode === 'marker' ? await startMarker(common)
         : startScreen(common);
   stage.mode = mode;
+  stage.content = content;
   // pentru testele automate
   window.__stage = stage;
   return stage;
@@ -163,9 +164,17 @@ function startScreen({ root, content, world, status, setState, onTap }) {
   anchor.add(felt);
   content.group.visible = true;
   const camera = new THREE.PerspectiveCamera(42, root.clientWidth / root.clientHeight, 0.01, 10);
-  const fit = (content.footprint ?? 0.16) * 2.4 / Math.min(1, camera.aspect);
-  camera.position.set(0, fit * 1.05, fit * 0.85);
-  camera.lookAt(0, 0, 0.01);
+  if (content.screen) {
+    // conținut înalt (turnul, cubul): privim din lateral, spre mijlocul lui
+    const { target, elevation, distance } = content.screen;
+    const d = distance * (camera.aspect < 0.6 ? 1.2 : 1);
+    camera.position.set(0, target[1] + d * Math.sin(elevation), d * Math.cos(elevation));
+    camera.lookAt(...target);
+  } else {
+    const fit = (content.footprint ?? 0.16) * 2.4 / Math.min(1, camera.aspect);
+    camera.position.set(0, fit * 1.05, fit * 0.85);
+    camera.lookAt(0, 0, 0.01);
+  }
   faceCamera(content, camera.position);
 
   // tras orizontal = rotești masa

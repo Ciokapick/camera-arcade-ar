@@ -5,6 +5,8 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 - **Barbut**: doi zari 3D cu fizică reală; pe rând, cea mai mare sumă ia runda (la egalitate aruncă din nou doar cei la egalitate).
 - **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din cameră (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru. Singur pe telefon: doi jucători, câte o mână.
 - **Nu te supăra, frate**: 2–4 jucători, fiecare cu culoarea aleasă, tabla 3D pe masă.
+- **Jenga**: turn de 54 de piese pe masă; pe rând tragi o piesă, ea urcă sus; cine dărâmă turnul pierde. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
+- **X și 0 3D**: cub de 4×4×4 (76 de linii posibile) — patru în linie pe orice direcție, inclusiv prin niveluri și pe diagonalele cubului.
 
 ## Cum se joacă
 
@@ -25,6 +27,8 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 | `net.js` | multiplayer fără server propriu: PeerJS (WebRTC); gazda ține starea și o trimite tuturor |
 | `dice.js` | zaruri cu fizică (cannon-es); valoarea e decisă de cel care aruncă, animația o respectă pe toate telefoanele |
 | `board.js` | tabla 3D, pionii animați pas cu pas |
+| `jenga.js`, `jenga-view.js` | regulile și stabilitatea turnului / turnul 3D, tragerea și prăbușirea |
+| `xo.js`, `xo-view.js` | cele 76 de linii, calculatorul / cubul de sticlă |
 | `ar.js` | scena: ecran / WebXR (Android) / AlvaAR SLAM + giroscop (iPhone) / marker ArUco (js-aruco2) |
 | `hands.js` | recunoașterea mâinilor și a gestului |
 | `app.js`, `index.html` | interfața |
@@ -37,7 +41,7 @@ Biblioteci (din CDN): three.js, cannon-es, PeerJS, MediaPipe Tasks Vision, [Alva
 node --test tests/*.test.mjs
 ```
 
-Regulile, camera de joc (inclusiv partide întregi jucate de calculator) și clasificarea gesturilor.
+Regulile tuturor jocurilor, camera de joc (inclusiv partide întregi jucate de calculator), stabilitatea turnului Jenga și clasificarea gesturilor. Testul de prăbușire Jenga descarcă o dată cannon-es în `tests/.cache`.
 
 ## Calibrare AR (din URL)
 

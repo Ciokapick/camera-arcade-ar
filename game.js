@@ -2,6 +2,8 @@
 // Gazda rulează reducer-ul și trimite starea tuturor; ceilalți doar trimit acțiuni.
 // Fără DOM și fără rețea — testat în tests/game.test.mjs.
 import * as ludo from './ludo.js';
+import * as xo from './xo.js';
+import * as jenga from './jenga.js';
 
 export const COLORS = ludo.COLORS;
 export const MAX_PLAYERS = 4;
@@ -10,7 +12,7 @@ const BEATS = { 'Piatră': 'Foarfecă', 'Foarfecă': 'Hârtie', 'Hârtie': 'Piat
 export const RPS_COUNTDOWN_MS = 2200; // „Piatră… Hârtie… Foarfecă!” pe fiecare telefon
 
 export function newRoom(host) {
-  return { seq: 0, hostId: host.id, players: [{ id: host.id, name: host.name, color: COLORS[0], bot: false }], game: null, barbut: null, rps: null, ludo: null, roll: null };
+  return { seq: 0, hostId: host.id, players: [{ id: host.id, name: host.name, color: COLORS[0], bot: false }], game: null, barbut: null, rps: null, ludo: null, xo: null, jenga: null, roll: null };
 }
 
 export const playerById = (room, id) => room.players.find(p => p.id === id);
@@ -72,6 +74,10 @@ function apply(r, a, from) {
     case 'move':
       if (r.game !== 'ludo' || !me || !ludo.move(r.ludo, me.color, a.pawn)) return false;
       return;
+    case 'place':
+      return r.game === 'xo' && me ? xoPlace(r, me, a.cell) : false;
+    case 'pull':
+      return r.game === 'jenga' && me ? jengaPull(r, me, a) : false;
     case 'hand':
       if (r.game !== 'rps' || !me) return false;
       if (!!r.rps.ready[from] === !!a.visible) return false;
@@ -113,6 +119,12 @@ function startGame(r, game) {
   } else if (game === 'ludo') {
     if (r.players.length < 2) return false;
     r.ludo = ludo.newLudo(r.players);
+  } else if (game === 'xo') {
+    // joacă primii doi din cameră (X începe); ceilalți se uită
+    if (r.players.length < 2) return false;
+    r.xo = { players: ids.slice(0, 2), cells: Array(xo.CELLS).fill(null), turn: 0, winner: null, line: null, last: null };
+  } else if (game === 'jenga') {
+    r.jenga = { order: ids, turn: 0, slots: jenga.newTower(), phase: 'pull', loser: null, last: null, moves: 0 };
   } else {
     return false;
   }
@@ -148,6 +160,60 @@ function removePlayer(r, id) {
     if (r.rps.phase === 'countdown' && r.players.every(p => p.id in r.rps.picks)) resolveRps(r);
   }
   if (r.ludo) ludo.removeColor(r.ludo, player.color);
+  if (r.xo && r.xo.players.includes(id) && !r.xo.winner) {
+    // a ieșit un jucător: celălalt câștigă
+    r.xo.winner = r.xo.players.find(p => p !== id) ?? null;
+  }
+  if (r.jenga) {
+    const j = r.jenga;
+    const index = j.order.indexOf(id);
+    if (index >= 0) {
+      j.order.splice(index, 1);
+      if (index < j.turn) j.turn -= 1;
+      if (j.turn >= j.order.length) j.turn = 0;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- X și 0 (cub 4×4×4)
+
+function xoPlace(r, me, cell) {
+  const s = r.xo;
+  if (s.winner || s.players[s.turn] !== me.id || !Number.isInteger(cell) || cell < 0 || cell >= xo.CELLS || s.cells[cell]) return false;
+  const mark = s.turn === 0 ? 'X' : 'O';
+  s.cells[cell] = mark;
+  s.last = cell;
+  const win = xo.winner(s.cells);
+  if (win) {
+    s.winner = me.id;
+    s.line = win.line;
+  } else if (s.cells.every(Boolean)) {
+    s.winner = 'draw';
+  } else {
+    s.turn = 1 - s.turn;
+  }
+}
+
+// ---------------------------------------------------------------- Jenga
+
+export const jengaTurn = j => j.order[j.turn] ?? null;
+
+function jengaPull(r, me, { block, dir, luck }) {
+  const j = r.jenga;
+  if (j.phase !== 'pull' || jengaTurn(j) !== me.id || !jenga.pullable(j.slots, block)) return false;
+  const from = j.slots[block];
+  const o = jenga.outcome(j.slots, block);
+  // luck vine de la cel care trage (0..1); sub risc = turnul se clatină și cade
+  const fell = !o.stable || (Number(luck) < o.risk);
+  j.slots = o.slots;
+  j.moves += 1;
+  j.last = { block, dir: dir < 0 ? -1 : 1, by: me.id, from, to: o.slots[block], fell, seq: r.seq + 1 };
+  if (fell) {
+    j.phase = 'over';
+    j.loser = me.id;
+  } else {
+    j.turn = (j.turn + 1) % j.order.length;
+  }
 }
 
 // ---------------------------------------------------------------- Barbut
@@ -242,6 +308,17 @@ export function hostTimers(room, now, memo, rand = Math.random) {
     const turn = barbutTurn(room.barbut);
     const bot = room.players.find(p => p.id === turn && p.bot);
     if (since('bot', !!bot) > 1200) out.push({ action: { type: 'roll', values: [die(), die()] }, from: bot.id });
+  }
+  if (room.game === 'xo' && !room.xo.winner) {
+    const s = room.xo;
+    const bot = room.players.find(p => p.id === s.players[s.turn] && p.bot);
+    if (since('bot', !!bot) > 900) out.push({ action: { type: 'place', cell: xo.botMove(s.cells, s.turn === 0 ? 'X' : 'O', rand) }, from: bot.id });
+  }
+  if (room.game === 'jenga' && room.jenga.phase === 'pull') {
+    const j = room.jenga;
+    const bot = room.players.find(p => p.id === jengaTurn(j) && p.bot);
+    // așteaptă și animația piesei de dinainte
+    if (since('bot', !!bot) > 2600) out.push({ action: { type: 'pull', block: jenga.botPull(j.slots, rand), dir: rand() < 0.5 ? -1 : 1, luck: rand() }, from: bot.id });
   }
   if (room.game === 'ludo' && room.ludo.phase !== 'over') {
     const s = room.ludo;

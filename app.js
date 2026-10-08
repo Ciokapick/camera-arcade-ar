@@ -2,10 +2,13 @@
 // Starea jocului vine mereu de la gazdă (net.js + game.js); aici doar o arătăm și trimitem acțiuni.
 import * as THREE from 'three';
 import { hostRoom, joinRoom } from './net.js';
-import { COLORS, RPS_COUNTDOWN_MS, barbutTurn, playerById } from './game.js';
+import { COLORS, RPS_COUNTDOWN_MS, barbutTurn, jengaTurn, playerById } from './game.js';
 import * as ludo from './ludo.js';
 import { createDice } from './dice.js';
 import { createBoard, SEAT, SIZE as BOARD_SIZE } from './board.js';
+import { createXO } from './xo-view.js';
+import { createJenga } from './jenga-view.js';
+import * as jenga from './jenga.js';
 import { openStage, webXRSupported } from './ar.js';
 import { trackHands } from './hands.js';
 
@@ -17,7 +20,7 @@ const storage = {
 };
 const d6 = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 6);
 const EMOJI = { 'Piatră': '✊', 'Hârtie': '✋', 'Foarfecă': '✌️' };
-const GAME_TITLES = { barbut: 'Barbut', rps: 'Piatră–Hârtie–Foarfecă', ludo: 'Nu te supăra, frate' };
+const GAME_TITLES = { barbut: 'Barbut', rps: 'Piatră–Hârtie–Foarfecă', ludo: 'Nu te supăra, frate', xo: 'X și 0 3D', jenga: 'Jenga' };
 
 let myName = storage.get('camera-arcade-name') || '';
 let room = null;
@@ -105,8 +108,8 @@ $('#games').addEventListener('click', event => {
   const game = event.target.closest('[data-game]')?.dataset.game;
   if (!game || !room.isHost) return;
   const players = room.state.players.length;
-  // singur la barbut sau „Nu te supăra” → îți punem un calculator ca adversar
-  if (players === 1 && game !== 'rps') room.dispatch({ type: 'add-bot' });
+  // singur la barbut, „Nu te supăra” sau X și 0 → îți punem un calculator ca adversar
+  if (players === 1 && ['barbut', 'ludo', 'xo'].includes(game)) room.dispatch({ type: 'add-bot' });
   room.dispatch({ type: 'select', game });
 });
 
@@ -203,12 +206,25 @@ function renderGame(state, self) {
   $('#game-code').hidden = !room.online;
   $('#game-code').textContent = room.code ?? '';
   if (state.game === 'rps') return renderRps(state, self);
-  animateNewRoll(state);
-  // nu stricăm surpriza: textele se actualizează după ce se opresc zarurile
-  if (view.content?.dice.busy) { view.pending = true; return; }
+  if (view.content?.dice) animateNewRoll(state);
+  if (state.game === 'xo') view.xo.setState(state.xo);
+  if (state.game === 'jenga') view.jenga.setState(state.jenga);
+  // nu stricăm surpriza: textele se actualizează după ce se opresc zarurile / piesa
+  if (view.content?.busy) { view.pending = true; $('#main-action').hidden = true; return; }
   view.pending = false;
   if (state.game === 'barbut') renderBarbut(state, self);
-  else renderLudo(state, self);
+  else if (state.game === 'ludo') renderLudo(state, self);
+  else if (state.game === 'xo') renderXO(state, self);
+  else renderJenga(state, self);
+}
+
+// la finalul partidei, gazda poate porni direct una nouă
+function newGameButton(over) {
+  if (!over || !room.isHost) return false;
+  $('#main-action').textContent = '🔄 Joc nou';
+  $('#main-action').hidden = false;
+  view.newGame = true;
+  return true;
 }
 
 function settled() {
@@ -221,13 +237,22 @@ function startStageView(v) {
   if (v.game === 'barbut') {
     const group = new THREE.Group();
     const dice = createDice(group, { count: 2, size: 0.035 });
-    v.content = { group, dice, footprint: 0.16, update: dt => { if (dice.update(dt)) settled(); } };
+    v.content = { group, dice, footprint: 0.16, get busy() { return dice.busy; }, update: dt => { if (dice.update(dt)) settled(); } };
+  } else if (v.game === 'xo') {
+    const cube = createXO();
+    v.xo = cube;
+    v.content = { group: cube.group, footprint: cube.footprint, screen: cube.screen, busy: false, pick: raycaster => pickCell(raycaster), update: dt => cube.update(dt) };
+  } else if (v.game === 'jenga') {
+    const tower = createJenga();
+    v.jenga = tower;
+    v.content = { group: tower.group, footprint: tower.footprint, screen: tower.screen, get busy() { return tower.busy; }, pick: raycaster => pickBlock(raycaster), update: dt => { if (tower.update(dt)) settled(); } };
   } else {
     const board = createBoard();
     v.board = board;
     v.content = {
       group: board.group,
       dice: board.dice,
+      get busy() { return board.dice.busy; },
       footprint: BOARD_SIZE * 0.62,
       facing: SEAT[me().color],
       pick: raycaster => pickPawn(raycaster),
@@ -260,7 +285,7 @@ async function openMode(mode) {
       status: text => { if (view === v) $('#ar-status').textContent = text; },
       // WebXR închis din sistem → revenim pe ecran
       setState: s => { if (s === 'closed' && view === v && v.stage === stage) { v.stage = null; openMode('screen'); } },
-      onTap: () => mainAction(),
+      onTap: tapAction,
     });
     if (view !== v) { stage.close(); return; }
     v.stage = stage;
@@ -313,7 +338,9 @@ function animateNewRoll(state) {
 
 function mainAction() {
   const state = room?.state, self = me();
-  if (!state || !self || !view || view.content?.dice.busy) return;
+  if (!state || !self || !view || view.content?.busy) return;
+  if (view.newGame && room.isHost) { view.newGame = false; return room.dispatch({ type: 'select', game: state.game }); }
+  if (state.game === 'jenga') return pullSelected();
   if (state.game === 'barbut' && barbutTurn(state.barbut) === self.id) {
     room.dispatch({ type: 'roll', values: [d6(), d6()] });
   } else if (state.game === 'ludo' && state.ludo.phase === 'roll' && ludo.current(state.ludo) === self.color && !view.board.animating) {
@@ -321,6 +348,8 @@ function mainAction() {
   }
 }
 $('#main-action').addEventListener('click', mainAction);
+// atingerea pe masă la X și 0 / Jenga nu aruncă nimic — acolo alegi celula sau piesa
+const tapAction = () => { if (!['xo', 'jenga'].includes(room?.state.game)) mainAction(); };
 
 function scoreChip(player, score, isTurn, extra = '') {
   return `<span class="chip ${isTurn ? 'turn' : ''}">${dot(player.color)}${escapeHtml(player.name)}${player.id === room.selfId ? ' (tu)' : ''} · ${score}${extra}</span>`;
@@ -336,6 +365,7 @@ function renderBarbut(state, self) {
   $('#info-small').textContent = tie + (turn === self.id ? 'E rândul tău — apasă „Aruncă” sau atinge masa.' : `${nameOf(turn)} aruncă…`);
   const rolls = Object.keys(b.rolls).length ? b.rolls : b.lastRolls;
   $('#picks').innerHTML = Object.entries(rolls).map(([id, [x, y]]) => `<span class="chip">${escapeHtml(nameOf(id))}: ${x} + ${y} = ${x + y}</span>`).join('');
+  view.newGame = false;
   $('#main-action').textContent = '🎲 Aruncă';
   $('#main-action').hidden = turn !== self.id;
   $('#rps-bot').hidden = true;
@@ -386,8 +416,10 @@ function renderLudo(state, self) {
   }
   const moves = mine && L.phase === 'move' ? ludo.legalMoves(L, color, L.die) : [];
   $('#pawn-buttons').innerHTML = moves.map(m => `<button data-pawn="${m.pawn}">Pionul ${m.pawn + 1}${m.from === ludo.YARD ? ' · iese' : m.to >= ludo.TRACK ? ' · la final' : ''}</button>`).join('');
+  view.newGame = false;
   $('#main-action').textContent = '🎲 Dă cu zarul';
   $('#main-action').hidden = !(mine && L.phase === 'roll');
+  newGameButton(L.phase === 'over');
   $('#rps-bot').hidden = true;
   $('#picks').innerHTML = '';
   syncBoard();
@@ -396,6 +428,103 @@ $('#pawn-buttons').addEventListener('click', event => {
   const pawn = event.target.closest('[data-pawn]')?.dataset.pawn;
   if (pawn !== undefined) room.dispatch({ type: 'move', pawn: Number(pawn) });
 });
+
+// ---------------------------------------------------------------- X și 0 3D
+
+function pickCell(raycaster) {
+  const state = room?.state, self = me();
+  const s = state?.xo;
+  if (!s || s.winner || s.players[s.turn] !== self.id) return false;
+  const cell = view.xo.pick(raycaster, s.cells);
+  if (cell === null) return false;
+  room.dispatch({ type: 'place', cell });
+  return true;
+}
+
+function renderXO(state, self) {
+  const s = state.xo;
+  const mark = id => (s.players[0] === id ? '❌' : s.players[1] === id ? '⭕' : '👀');
+  $('#scoreboard').innerHTML = state.players.map(p => `<span class="chip ${s.players[s.turn] === p.id && !s.winner ? 'turn' : ''}">${mark(p.id)} ${escapeHtml(p.name)}${p.id === room.selfId ? ' (tu)' : ''}</span>`).join('');
+  const mine = s.players[s.turn] === self.id;
+  if (s.winner) {
+    $('#info-big').textContent = s.winner === 'draw' ? 'Remiză!' : `🏆 ${nameOf(s.winner)} a făcut linie!`;
+    $('#info-small').textContent = room.isHost ? '' : 'Gazda poate porni un joc nou.';
+  } else if (!s.players.includes(self.id)) {
+    $('#info-big').textContent = `${nameOf(s.players[s.turn])} e la rând`;
+    $('#info-small').textContent = 'Joacă primii doi din cameră; tu te uiți.';
+  } else {
+    $('#info-big').textContent = mine ? `E rândul tău ${mark(self.id)}` : `${nameOf(s.players[s.turn])} e la rând`;
+    $('#info-small').textContent = mine ? 'Atinge o celulă liberă. Patru în linie, pe orice direcție — și prin niveluri.' : 'Patru în linie, pe orice direcție, câștigă.';
+  }
+  $('#picks').innerHTML = '';
+  $('#pawn-buttons').innerHTML = '';
+  $('#rps-bot').hidden = true;
+  view.newGame = false;
+  $('#main-action').hidden = true;
+  newGameButton(!!s.winner);
+}
+
+// ---------------------------------------------------------------- Jenga
+
+function pickBlock(raycaster) {
+  const state = room?.state, self = me();
+  const j = state?.jenga;
+  if (!j || j.phase !== 'pull' || jengaTurn(j) !== self.id || view.content.busy) return false;
+  const block = view.jenga.pick(raycaster);
+  if (block === null) return false;
+  if (!jenga.pullable(j.slots, block)) {
+    toast('Nu poți trage din vârful turnului.');
+    return true;
+  }
+  view.jenga.select(view.jenga.selected === block ? null : block);
+  renderJenga(state, self);
+  return true;
+}
+
+function pullSelected() {
+  const state = room.state, self = me(), j = state.jenga, block = view.jenga.selected;
+  if (block === null || j.phase !== 'pull' || jengaTurn(j) !== self.id) return;
+  // piesa iese spre tine: semnul vine din poziția camerei față de piesă, pe axa ei lungă
+  const cam = view.stage?.cameraLocal() ?? new THREE.Vector3(0, 0, 1);
+  const axis = jenga.axisOf(j.slots[block].level);
+  const towards = cam.sub(view.jenga.blockPosition(block));
+  const dir = towards.x * axis[0] + towards.z * axis[2] >= 0 ? 1 : -1;
+  view.jenga.select(null);
+  room.dispatch({ type: 'pull', block, dir, luck: Math.random() });
+}
+
+function renderJenga(state, self) {
+  const j = state.jenga;
+  const turn = jengaTurn(j);
+  $('#scoreboard').innerHTML = j.order.map(id => playerById(state, id)).filter(Boolean)
+    .map(p => `<span class="chip ${p.id === turn && j.phase === 'pull' ? 'turn' : ''}">${dot(p.color)}${escapeHtml(p.name)}${p.id === room.selfId ? ' (tu)' : ''}${j.loser === p.id ? ' 💥' : ''}</span>`).join('');
+  const mine = turn === self.id && j.phase === 'pull';
+  const selected = view.jenga.selected;
+  if (!mine && selected !== null) view.jenga.select(null);
+  view.newGame = false;
+  $('#main-action').hidden = true;
+  if (j.phase === 'over') {
+    $('#info-big').textContent = `💥 Turnul a căzut!`;
+    $('#info-small').textContent = `${nameOf(j.loser)} a pierdut după ${j.moves} ${j.moves === 1 ? 'tragere' : 'trageri'}.`;
+    newGameButton(true);
+  } else if (mine) {
+    $('#info-big').textContent = 'E rândul tău';
+    if (selected !== null) {
+      const o = jenga.outcome(j.slots, selected);
+      $('#info-small').textContent = `Piesa aleasă — risc ${o.stable ? Math.round(o.risk * 100) : 100}%. Apasă „Trage piesa”.`;
+      $('#main-action').textContent = '✋ Trage piesa';
+      $('#main-action').hidden = false;
+    } else {
+      $('#info-small').textContent = 'Atinge o piesă din turn (nu din vârf). Trage cu degetul ca să rotești turnul.';
+    }
+  } else {
+    $('#info-big').textContent = `${nameOf(turn)} e la rând`;
+    $('#info-small').textContent = `${j.moves} ${j.moves === 1 ? 'piesă trasă' : 'piese trase'} până acum.`;
+  }
+  $('#picks').innerHTML = '';
+  $('#pawn-buttons').innerHTML = '';
+  $('#rps-bot').hidden = true;
+}
 
 // ---------------------------------------------------------------- piatră-hârtie-foarfecă
 
