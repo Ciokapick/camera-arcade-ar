@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marker comun</title>
+  <style>
+    body { margin:0; padding:16px; background:#fff; color:#111; font-family:system-ui,-apple-system,sans-serif; text-align:center; }
+    h1 { font-size:22px; margin:8px 0; }
+    p { max-width:520px; margin:8px auto; font-size:14px; line-height:1.45; color:#333; }
+    /* pătratul negru al markerului = 15 cm la printare (SVG-ul are 1 unitate de margine albă din 10) */
+    #marker { width:18.75cm; max-width:100%; margin:16px auto; }
+    #marker svg { width:100%; height:auto; display:block; }
+    button { font:inherit; font-weight:700; padding:10px 18px; border-radius:10px; border:0; background:#111; color:#fff; }
+    @media print { .no-print { display:none; } body { padding:0; } }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+</head>
+<body>
+  <div class="no-print">
+    <h1>Marker comun pentru „Nu te supăra, frate”</h1>
+    <p>Pune markerul pe masă, la mijlocul jucătorilor. Fiecare apasă în joc <b>🎯 Marker comun</b> și îndreaptă camera spre el: tabla apare exact pe marker, în același loc pentru toți.</p>
+    <p>Printează pagina la mărime reală (100%, fără „fit to page”): pătratul negru are 15 cm. Merge și afișat pe o tabletă sau laptop pus pe masă.</p>
+    <button onclick="print()">Printează</button>
+  </div>
+  <div id="marker"></div>
+  <script>
+    // același marker ca în ar.js (dicționar ARUCO_MIP_36h12, id 7)
+    document.getElementById('marker').innerHTML = new AR.Dictionary('ARUCO_MIP_36h12').generateSVG(7);
+  </script>
+</body>
+</html>
