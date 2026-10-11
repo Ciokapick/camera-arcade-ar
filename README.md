@@ -21,6 +21,8 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 
 ## Cum e făcut
 
+Explicat pe larg, pas cu pas: [DOCUMENTATIE.md](DOCUMENTATIE.md).
+
 | Fișier | Ce face |
 |---|---|
 | `ludo.js` | regulile „Nu te supăra, frate” |
