@@ -61,7 +61,7 @@ Din CDN (jsDelivr), cu versiunea fixată, ca să nu se strice peste noapte. În 
 |---|---|---|
 | `index.html` | interfață | toate ecranele (nume, lobby, joc) și stilurile (CSS) |
 | `app.js` | interfață | „dirijorul”: ascultă butoanele, trimite acțiuni, arată starea, pornește scena și camera |
-| `game.js` | reguli | starea camerei de joc și regulile la barbut, PHF, plus „creierul” calculatorului |
+| `game.js` | reguli | starea camerei de joc și regulile la zaruri, PHF, plus „creierul” calculatorului |
 | `ludo.js` | reguli | regulile „Nu te supăra, frate” |
 | `xo.js` | reguli | X și 0 + calculatorul |
 | `jenga.js` | reguli | turnul Jenga: ce piese poți trage, dacă turnul mai stă, prăbușirea |
@@ -213,7 +213,7 @@ Cum arată un test (simplificat):
 
 ```js
 let room = newRoom({ id: 'host', name: 'Ana' });
-room = reduce(room, { type: 'select', game: 'barbut' }, 'host');
+room = reduce(room, { type: 'select', game: 'barbut' }, 'host'); // „Joc de zaruri” (în cod: barbut)
 room = reduce(room, { type: 'roll', values: [6, 6] }, 'host');
 assert.deepEqual(room.roll.values, [6, 6]); // ultima aruncare, văzută de toți
 ```

@@ -23,7 +23,7 @@ const storage = {
 const leiText = v => (Math.abs(v) === 1 ? `${v} leu` : `${v} lei`);
 const d6 = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 6);
 const GESTURE_ICON = { 'Piatră': 'hand-fist', 'Hârtie': 'hand-palm', 'Foarfecă': 'hand-peace' };
-const GAME_TITLES = { barbut: 'Barbut', rps: 'Piatră–Hârtie–Foarfecă', ludo: 'Nu te supăra, frate', xo: 'X și 0', jenga: 'Jenga' };
+const GAME_TITLES = { barbut: 'Joc de zaruri', rps: 'Piatră–Hârtie–Foarfecă', ludo: 'Nu te supăra, frate', xo: 'X și 0', jenga: 'Jenga' };
 
 let myName = storage.get('camera-arcade-name') || '';
 let room = null;
@@ -117,7 +117,7 @@ $('#games').addEventListener('click', event => {
   const game = event.target.closest('[data-game]')?.dataset.game;
   if (!game || !room.isHost) return;
   const players = room.state.players.length;
-  // singur la barbut, „Nu te supăra” sau X și 0 → îți punem un calculator ca adversar
+  // singur la zaruri, „Nu te supăra” sau X și 0 → îți punem un calculator ca adversar
   if (players === 1 && ['barbut', 'ludo', 'xo'].includes(game)) room.dispatch({ type: 'add-bot' });
   room.dispatch({ type: 'select', game });
 });
@@ -378,19 +378,42 @@ function renderBarbut(state, self) {
   const lei = v => `${v > 0 ? '+' : ''}${leiText(v)}`;
   $('#scoreboard').innerHTML = state.players.map(p => scoreChip(p, b.scores[p.id] ?? 0, p.id === turn, b.money ? ` · ${lei(b.balance[p.id] ?? 0)}` : '')).join('');
   const r = b.result;
-  $('#info-big').innerHTML = r ? (r.type === 'win' ? `${ic('trophy')} ${nm(r.id)} ia runda cu ${r.sum}` : `Egalitate la ${r.sum}`) : `Runda ${b.round}`;
-  const tie = r?.type === 'tie' ? `Mai aruncă doar: ${r.ids.map(nm).join(', ')}. ` : '';
   // cine cât a câștigat / pierdut runda trecută
   const pay = b.payout;
   const payout = b.money && pay && r?.type === 'win' && r.id === pay.winner
     ? (pay.won > 0
-      ? `${ic('coins')} ${nm(pay.winner)} câștigă ${leiText(pay.won)} (${Object.entries(pay.lost).map(([id, v]) => `${nm(id)} −${leiText(v)}`).join(', ')}). `
-      : `${ic('coins')} ${nm(pay.winner)} își ia pariul înapoi (${leiText(pay.pot)}). `)
+      ? `${nm(pay.winner)} câștigă ${leiText(pay.won)} (${Object.entries(pay.lost).map(([id, v]) => `${nm(id)} −${leiText(v)}`).join(', ')}). `
+      : `${nm(pay.winner)} își ia pariul înapoi (${leiText(pay.pot)}). `)
     : '';
-  $('#info-small').innerHTML = payout + tie + (turn === self.id ? 'E rândul tău — apasă „Aruncă” sau atinge masa.' : `${nm(turn)} aruncă…`);
-  const rolls = Object.keys(b.rolls).length ? b.rolls : b.lastRolls;
-  const bets = b.money ? Object.entries(b.bets).map(([id, v]) => `<span class="pill">${ic('money')}${nm(id)} <strong>${leiText(v)}</strong></span>`) : [];
-  $('#picks').innerHTML = Object.entries(rolls).map(([id, [x, y]]) => `<span class="pill">${nm(id)} ${x} + ${y} = <strong>${x + y}</strong></span>`).join('') + bets.join('');
+  const next = turn === self.id ? 'E rândul tău — apasă „Aruncă” sau atinge masa.' : `Urmează: ${nm(turn)}.`;
+  const thrown = Object.keys(b.rolls).length > 0; // runda curentă a început
+  let big, small;
+  if (thrown && state.roll) {
+    // tocmai a aruncat cineva: punctele lui, din prima
+    const [x, y] = state.roll.values;
+    big = `${state.roll.by === self.id ? 'Ai dat' : `${nm(state.roll.by)} a dat`} ${x} + ${y} = ${x + y} puncte`;
+    small = next;
+  } else if (r?.type === 'win') {
+    big = `${ic('trophy')} ${r.id === self.id ? 'Ai câștigat runda' : `${nm(r.id)} câștigă runda`}`;
+    small = `Cu ${r.sum} puncte. ${payout}${next}`;
+  } else if (r?.type === 'tie') {
+    big = `Egalitate la ${r.sum}`;
+    small = `Mai aruncă doar: ${r.ids.map(nm).join(', ')}. ${next}`;
+  } else {
+    big = `Runda ${b.round}`;
+    small = next;
+  }
+  $('#info-big').innerHTML = big;
+  $('#info-small').innerHTML = small;
+  // punctele fiecăruia în runda asta (sau în cea abia încheiată, cu câștigătorul evidențiat)
+  const rolls = thrown ? b.rolls : b.lastRolls;
+  const winner = !thrown && r?.type === 'win' ? r.id : null;
+  const points = state.players.filter(p => rolls[p.id]).map(p => {
+    const [x, y] = rolls[p.id];
+    return `<span class="pill ${p.id === winner ? 'win' : ''}">${p.id === winner ? ic('trophy') : ''}${escapeHtml(p.name)}: ${x} + ${y} = <strong>${x + y}</strong></span>`;
+  });
+  const bets = b.money ? Object.entries(b.bets).map(([id, v]) => `<span class="pill">${ic('money')}${nm(id)}: <strong>${leiText(v)}</strong></span>`) : [];
+  $('#picks').innerHTML = points.join('') + bets.join('');
   view.newGame = false;
   $('#main-action').innerHTML = label('dice-five', 'Aruncă');
   $('#main-action').hidden = turn !== self.id;
@@ -410,7 +433,7 @@ function renderBarbut(state, self) {
 $('#money-button').addEventListener('click', () => {
   const b = room.state.barbut;
   room.dispatch({ type: 'money', on: !b.money });
-  toast(b.money ? 'Pariurile sunt oprite.' : 'Barbut pe bani: fiecare pune bancnota înainte să arunce.');
+  toast(b.money ? 'Pariurile sunt oprite.' : 'Zaruri pe bani: fiecare pune bancnota înainte să arunce.');
 });
 $('#bet-notes').innerHTML = NOTES.map(v => `<button class="btn" data-note="${v}">${leiText(v)}</button>`).join('');
 $('#bet-panel').querySelector('#bet-hint').insertAdjacentHTML('beforebegin', '<p class="muted">Pariul tău: <b id="bet-total">0 lei</b></p>');

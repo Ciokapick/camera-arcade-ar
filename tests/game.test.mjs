@@ -293,3 +293,15 @@ test('barbut pe bani cu calculatorul: el pune o bancnotă, apoi aruncă', () => 
   assert.equal(r.barbut.result.id, bot, 'calculatorul dă mai mult de 2');
   assert.deepEqual(r.barbut.payout, { winner: bot, pot: 20, won: 10, lost: { h: 10 } });
 });
+
+test('zaruri: calculatorul așteaptă să se oprească zarurile celui dinainte', () => {
+  let r = newRoom({ id: 'h', name: 'Denis' });
+  r = reduce(r, { type: 'add-bot' }, 'h');
+  r = reduce(r, { type: 'select', game: 'barbut' }, 'h');
+  r = reduce(r, { type: 'roll', values: [4, 2] }, 'h');
+  const memo = {};
+  hostTimers(r, 0, memo);
+  assert.deepEqual(hostTimers(r, 2000, memo), [], 'zarurile încă se rostogolesc');
+  const [roll] = hostTimers(r, 3500, memo);
+  assert.equal(roll.action.type, 'roll');
+});

@@ -2,7 +2,7 @@
 
 Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), singur sau cu prietenii:
 
-- **Barbut**: două zaruri 3D cu fizică reală; pe rând, cea mai mare sumă ia runda (la egalitate aruncă din nou doar cei la egalitate).
+- **Joc de zaruri**: două zaruri 3D cu fizică reală; pe rând, fiecare aruncă și vede imediat câte puncte a făcut; cine are mai multe ia runda (la egalitate aruncă din nou doar cei la egalitate).
   - **Pe bani** (bonus, îl pornește gazda): fiecare își pune bancnota în fața camerei înainte să arunce; aplicația recunoaște bancnota (1–500 lei), câștigătorul rundei ia potul și se ține soldul fiecăruia.
 - **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din cameră (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru, cu numărătoare 3–2–1 (bip și vibrație), iar gestul se arată pe „Acum!”. Singur pe telefon: o mână = tu contra calculatorului, două mâini = doi jucători.
 - **Nu te supăra, frate**: 2–4 jucători, fiecare cu culoarea aleasă, tabla 3D pe masă.
@@ -26,7 +26,7 @@ Explicat pe larg, pas cu pas: [DOCUMENTATIE.md](DOCUMENTATIE.md).
 | Fișier | Ce face |
 |---|---|
 | `ludo.js` | regulile „Nu te supăra, frate” |
-| `game.js` | starea camerei de joc (lobby, barbut, PHF, Ludo, calculatorul) — reducer pur |
+| `game.js` | starea camerei de joc (lobby, zaruri, PHF, Ludo, calculatorul) — reducer pur |
 | `net.js` | multiplayer fără server propriu: PeerJS (WebRTC); gazda ține starea și o trimite tuturor |
 | `dice.js` | zaruri cu fizică (cannon-es); valoarea e decisă de cel care aruncă, animația o respectă pe toate telefoanele |
 | `board.js` | tabla 3D, pionii animați pas cu pas |
