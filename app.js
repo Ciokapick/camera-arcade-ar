@@ -20,7 +20,7 @@ const storage = {
 };
 const d6 = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 6);
 const EMOJI = { 'Piatră': '✊', 'Hârtie': '✋', 'Foarfecă': '✌️' };
-const GAME_TITLES = { barbut: 'Barbut', rps: 'Piatră–Hârtie–Foarfecă', ludo: 'Nu te supăra, frate', xo: 'X și 0 3D', jenga: 'Jenga' };
+const GAME_TITLES = { barbut: 'Barbut', rps: 'Piatră–Hârtie–Foarfecă', ludo: 'Nu te supăra, frate', xo: 'X și 0', jenga: 'Jenga' };
 
 let myName = storage.get('camera-arcade-name') || '';
 let room = null;
@@ -241,7 +241,7 @@ function startStageView(v) {
   } else if (v.game === 'xo') {
     const cube = createXO();
     v.xo = cube;
-    v.content = { group: cube.group, footprint: cube.footprint, screen: cube.screen, busy: false, pick: raycaster => pickCell(raycaster), update: dt => cube.update(dt) };
+    v.content = { group: cube.group, footprint: cube.footprint, busy: false, pick: raycaster => pickCell(raycaster), update: dt => cube.update(dt) };
   } else if (v.game === 'jenga') {
     const tower = createJenga();
     v.jenga = tower;
@@ -429,14 +429,14 @@ $('#pawn-buttons').addEventListener('click', event => {
   if (pawn !== undefined) room.dispatch({ type: 'move', pawn: Number(pawn) });
 });
 
-// ---------------------------------------------------------------- X și 0 3D
+// ---------------------------------------------------------------- X și 0
 
 function pickCell(raycaster) {
   const state = room?.state, self = me();
   const s = state?.xo;
   if (!s || s.winner || s.players[s.turn] !== self.id) return false;
-  const cell = view.xo.pick(raycaster, s.cells);
-  if (cell === null) return false;
+  const cell = view.xo.pick(raycaster);
+  if (cell === null || s.cells[cell]) return false;
   room.dispatch({ type: 'place', cell });
   return true;
 }
@@ -454,7 +454,7 @@ function renderXO(state, self) {
     $('#info-small').textContent = 'Joacă primii doi din cameră; tu te uiți.';
   } else {
     $('#info-big').textContent = mine ? `E rândul tău ${mark(self.id)}` : `${nameOf(s.players[s.turn])} e la rând`;
-    $('#info-small').textContent = mine ? 'Atinge o celulă liberă. Patru în linie, pe orice direcție — și prin niveluri.' : 'Patru în linie, pe orice direcție, câștigă.';
+    $('#info-small').textContent = mine ? 'Atinge o căsuță liberă de pe tablă.' : 'Trei în linie câștigă.';
   }
   $('#picks').innerHTML = '';
   $('#pawn-buttons').innerHTML = '';
@@ -553,16 +553,28 @@ function stopRpsCamera() {
 async function startRpsView(v) {
   $('#rps-view').classList.add('show');
   v.hands = [];
-  v.local = { phase: 'idle', since: 0, score: [0, 0] };
+  v.local = { phase: 'idle', since: 0, count: -1, mode: 'cpu', scores: { cpu: [0, 0], duo: [0, 0] } };
+  const status = text => { if (view === v) $('#ar-status').textContent = text; };
   try {
+    status('Pornesc camera…');
     await startRpsCamera();
     if (view !== v) return;
-    const stop = await trackHands({ video: $('#rps-video'), canvas: $('#rps-canvas'), mirrored: () => $('#rps-view').classList.contains('mirror'), onHands: hands => onHands(v, hands) });
+    status('Încarc recunoașterea mâinilor…');
+    const stop = await trackHands({
+      video: $('#rps-video'),
+      canvas: $('#rps-canvas'),
+      mirrored: () => $('#rps-view').classList.contains('mirror'),
+      onHands: hands => onHands(v, hands),
+      onStatus: status,
+    });
     if (view !== v) { stop(); return; }
     v.stopHands = stop;
+    v.trackerReady = true;
+    status('');
+    renderGame(room.state, me());
   } catch (error) {
     console.error(error);
-    if (view === v) toast('Nu pot porni camera: ' + (error.message || error));
+    status('Nu merge camera sau recunoașterea: ' + (error.message || error));
   }
 }
 $('#flip-camera').addEventListener('click', async () => {
@@ -577,7 +589,7 @@ const solo = () => room.state.players.length === 1;
 function onHands(v, hands) {
   v.hands = hands;
   if (view !== v) return;
-  if (solo()) return localTwoHands(v, hands);
+  if (solo()) return localRound(v, hands);
   // multiplayer: spunem gazdei când avem mâna în cadru (stabil 300 ms), runda pornește când toți au
   const visible = hands.length > 0;
   const now = performance.now();
@@ -597,7 +609,7 @@ function renderRps(state, self) {
   $('#rps-bot').hidden = !solo();
   $('#main-action').hidden = true;
   $('#pawn-buttons').innerHTML = '';
-  if (solo()) return renderLocalTwoHands(v);
+  if (solo()) return renderLocalIdle(v);
   $('#scoreboard').innerHTML = state.players.map(p => scoreChip(p, s.scores[p.id] ?? 0, false, s.phase === 'waiting' && (s.ready[p.id] || p.bot) ? ' ✋' : '')).join('');
   if (s.phase === 'waiting') {
     const ready = state.players.filter(p => s.ready[p.id] || p.bot).length;
@@ -631,55 +643,80 @@ function runCountdown(v, round) {
   }, RPS_COUNTDOWN_MS);
 }
 
-// singur pe telefon: doi jucători, câte o mână (stânga vs dreapta), ca înainte
+// Singur pe telefon: o mână = tu contra calculatorului; două mâini = doi jucători (stânga vs dreapta).
+// Runda pornește singură când mâinile stau în cadru ~0.6 s.
 const BEATS = { 'Piatră': 'Foarfecă', 'Foarfecă': 'Hârtie', 'Hârtie': 'Piatră' };
-function localTwoHands(v, hands) {
+const GESTURE_LIST = ['Piatră', 'Hârtie', 'Foarfecă'];
+function localRound(v, hands) {
   const L = v.local;
   const now = performance.now();
   if (L.phase === 'idle') {
-    if (hands.length !== 2) { L.since = 0; }
-    else {
-      L.since ||= now;
-      if (now - L.since > 600) {
-        L.phase = 'countdown';
-        L.started = now;
-      }
+    const count = Math.min(hands.length, 2);
+    if (count !== L.count) { L.count = count; L.since = now; }
+    if (count > 0 && now - L.since > 600) {
+      L.phase = 'countdown';
+      L.mode = count === 2 ? 'duo' : 'cpu';
+      L.started = now;
     }
   }
   if (L.phase === 'countdown') {
     const words = ['Piatră…', 'Hârtie…', 'Foarfecă!'];
-    const i = Math.min(2, Math.floor((now - L.started) / (RPS_COUNTDOWN_MS / 3)));
-    $('#info-big').textContent = words[i];
-    if (now - L.started > RPS_COUNTDOWN_MS + 250) {
-      const [left, right] = hands.length === 2 ? hands.map(h => h.gesture) : [];
-      if (!left || !right) {
-        $('#info-big').textContent = '🤷';
-        $('#info-small').textContent = 'Nu am recunoscut ambele gesturi. Încă o dată!';
-      } else {
-        const w = left === right ? 0 : BEATS[left] === right ? -1 : 1;
-        if (w < 0) L.score[0] += 1; else if (w > 0) L.score[1] += 1;
-        $('#info-big').textContent = `${EMOJI[left]} vs ${EMOJI[right]}`;
-        $('#info-small').textContent = w < 0 ? 'Stânga câștigă!' : w > 0 ? 'Dreapta câștigă!' : 'Egalitate';
-      }
-      L.phase = 'cooldown';
-      L.started = now;
-      renderLocalScore(v);
-    }
+    $('#info-big').textContent = words[Math.min(2, Math.floor((now - L.started) / (RPS_COUNTDOWN_MS / 3)))];
+    $('#info-small').textContent = L.mode === 'duo' ? 'Doi jucători: stânga contra dreapta' : 'Tu contra calculatorului';
+    if (now - L.started > RPS_COUNTDOWN_MS + 250) finishLocalRound(v, hands);
   } else if (L.phase === 'cooldown' && now - L.started > 2500) {
     L.phase = 'idle';
-    L.since = 0;
+    L.count = -1;
   }
-  if (L.phase === 'idle') renderLocalTwoHands(v);
+  if (L.phase === 'idle') renderLocalIdle(v);
+}
+function finishLocalRound(v, hands) {
+  const L = v.local;
+  const score = L.scores[L.mode];
+  if (L.mode === 'duo') {
+    const [left, right] = hands.length >= 2 ? hands.map(h => h.gesture) : [];
+    if (!left || !right) {
+      $('#info-big').textContent = '🤷';
+      $('#info-small').textContent = 'Nu am recunoscut ambele gesturi. Încă o dată!';
+    } else {
+      const w = left === right ? 0 : BEATS[left] === right ? -1 : 1;
+      if (w < 0) score[0] += 1; else if (w > 0) score[1] += 1;
+      $('#info-big').textContent = `${EMOJI[left]} vs ${EMOJI[right]}`;
+      $('#info-small').textContent = w < 0 ? 'Stânga câștigă!' : w > 0 ? 'Dreapta câștigă!' : 'Egalitate';
+    }
+  } else {
+    const mine = myGesture(v);
+    if (!mine) {
+      $('#info-big').textContent = '🤷';
+      $('#info-small').textContent = 'Nu am recunoscut gestul. Ține mâna întreagă în cadru și încă o dată!';
+    } else {
+      const cpu = GESTURE_LIST[Math.floor(Math.random() * 3)];
+      const w = mine === cpu ? 0 : BEATS[mine] === cpu ? -1 : 1;
+      if (w < 0) score[0] += 1; else if (w > 0) score[1] += 1;
+      $('#info-big').textContent = `${EMOJI[mine]} vs ${EMOJI[cpu]}`;
+      $('#info-small').textContent = `Calculatorul: ${cpu}. ` + (w < 0 ? 'Ai câștigat!' : w > 0 ? 'Calculatorul câștigă.' : 'Egalitate.');
+    }
+  }
+  L.phase = 'cooldown';
+  L.started = performance.now();
+  renderLocalScore(v);
 }
 function renderLocalScore(v) {
-  $('#scoreboard').innerHTML = `<span class="chip">Stânga · ${v.local.score[0]}</span><span class="chip">Dreapta · ${v.local.score[1]}</span>`;
+  const L = v.local;
+  $('#scoreboard').innerHTML = L.mode === 'duo'
+    ? `<span class="chip">Stânga · ${L.scores.duo[0]}</span><span class="chip">Dreapta · ${L.scores.duo[1]}</span>`
+    : `<span class="chip">Tu · ${L.scores.cpu[0]}</span><span class="chip">Calculator · ${L.scores.cpu[1]}</span>`;
 }
-function renderLocalTwoHands(v) {
+function renderLocalIdle(v) {
   renderLocalScore(v);
-  if (v.local.phase !== 'idle') return;
   const hands = v.hands ?? [];
-  $('#info-big').textContent = hands.length === 2 ? `${hands[0].gesture ?? '?'} vs ${hands[1].gesture ?? '?'}` : 'Arătați două mâini';
-  $('#info-small').textContent = 'Doi jucători pe același telefon, câte o mână. Runda pornește singură.';
+  if (!v.trackerReady) return;
+  $('#info-big').textContent = hands.length === 0 ? 'Arată mâna'
+    : hands.length === 1 ? `Văd: ${hands[0].gesture ?? 'mâna'}`
+      : `${hands[0].gesture ?? '?'} vs ${hands[1].gesture ?? '?'}`;
+  $('#info-small').textContent = hands.length === 0
+    ? 'O mână = tu contra calculatorului. Două mâini = doi jucători pe același telefon. Runda pornește singură.'
+    : 'Ține mâna nemișcată — pornește runda…';
   $('#picks').innerHTML = '';
 }
 

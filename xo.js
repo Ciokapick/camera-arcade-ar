@@ -1,32 +1,13 @@
-// X și 0 în 3D: cub de 4×4×4, câștigă primul care face o linie de 4 (pe orizontală, verticală,
-// prin niveluri sau pe orice diagonală). Fără DOM — testat în tests/xo.test.mjs.
-export const N = 4;
-export const CELLS = N * N * N;
-export const index = (x, y, z) => x + N * y + N * N * z; // x, y = poziția pe nivel, z = nivelul
+// X și 0 clasic: tablă 3×3, câștigă primul care face trei în linie. Fără DOM — testat în tests/xo.test.mjs.
+export const N = 3;
+export const CELLS = N * N;
+export const index = (x, y) => x + N * y;
 
-// toate cele 76 de linii: din fiecare celulă, în fiecare din cele 13 direcții „înainte”
-export const LINES = (() => {
-  const lines = [];
-  const dirs = [];
-  for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) for (const dz of [-1, 0, 1]) {
-    if (dx || dy || dz) dirs.push([dx, dy, dz]);
-  }
-  const seen = new Set();
-  for (let x = 0; x < N; x++) for (let y = 0; y < N; y++) for (let z = 0; z < N; z++) {
-    for (const [dx, dy, dz] of dirs) {
-      const cells = [];
-      for (let k = 0; k < N; k++) {
-        const cx = x + dx * k, cy = y + dy * k, cz = z + dz * k;
-        if (cx < 0 || cy < 0 || cz < 0 || cx >= N || cy >= N || cz >= N) break;
-        cells.push(index(cx, cy, cz));
-      }
-      if (cells.length !== N) continue;
-      const key = [...cells].sort((a, b) => a - b).join(',');
-      if (!seen.has(key)) { seen.add(key); lines.push(cells); }
-    }
-  }
-  return lines;
-})();
+export const LINES = [
+  [0, 1, 2], [3, 4, 5], [6, 7, 8], // rânduri
+  [0, 3, 6], [1, 4, 7], [2, 5, 8], // coloane
+  [0, 4, 8], [2, 4, 6], // diagonale
+];
 
 export function winner(cells) {
   for (const line of LINES) {
@@ -36,7 +17,8 @@ export function winner(cells) {
   return null;
 }
 
-// Calculatorul: câștigă dacă poate, blochează dacă trebuie, altfel alege celula cu cele mai bune linii deschise
+// Calculatorul: câștigă dacă poate, blochează dacă trebuie, altfel centrul, un colț, ce a rămas.
+// Joacă bine, dar nu perfect — uneori alege la întâmplare, ca să poată fi bătut.
 export function botMove(cells, mark, rand = Math.random) {
   const other = mark === 'X' ? 'O' : 'X';
   const empty = cells.map((c, i) => (c ? -1 : i)).filter(i => i >= 0);
@@ -45,16 +27,9 @@ export function botMove(cells, mark, rand = Math.random) {
   if (win !== undefined) return win;
   const block = completes(other);
   if (block !== undefined) return block;
-  let best = -1, bestScore = -Infinity;
-  for (const i of empty) {
-    let score = rand() * 0.5;
-    for (const line of LINES) {
-      if (!line.includes(i)) continue;
-      const mine = line.filter(j => cells[j] === mark).length, theirs = line.filter(j => cells[j] === other).length;
-      if (theirs === 0) score += [1, 4, 16, 0][mine];
-      if (mine === 0) score += [0.5, 3, 12, 0][theirs];
-    }
-    if (score > bestScore) { bestScore = score; best = i; }
-  }
-  return best;
+  if (rand() < 0.25) return empty[Math.floor(rand() * empty.length)];
+  if (!cells[4]) return 4;
+  const corners = [0, 2, 6, 8].filter(i => !cells[i]);
+  if (corners.length) return corners[Math.floor(rand() * corners.length)];
+  return empty[Math.floor(rand() * empty.length)];
 }

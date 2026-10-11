@@ -16,20 +16,20 @@ export function classify(landmarks) {
   return null;
 }
 
-let trackerPromise;
-export function loadHandTracker() {
-  trackerPromise ??= (async () => {
+let vision;
+const trackers = {};
+// GPU e mai rapid; pe unele iPhone-uri nu pornește sau dă erori la detecție — atunci trecem pe CPU
+export function loadHandTracker(delegate = 'GPU') {
+  trackers[delegate] ??= (async () => {
     const { FilesetResolver, HandLandmarker } = await import(`${MEDIAPIPE}/+esm`);
-    const vision = await FilesetResolver.forVisionTasks(`${MEDIAPIPE}/wasm`);
-    const create = delegate => HandLandmarker.createFromOptions(vision, {
+    vision ??= await FilesetResolver.forVisionTasks(`${MEDIAPIPE}/wasm`);
+    return HandLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: MODEL, delegate },
       runningMode: 'VIDEO',
       numHands: 2,
     });
-    // GPU e mai rapid, dar pe unele iPhone-uri nu pornește; atunci mergem pe CPU
-    return create('GPU').catch(() => create('CPU'));
   })();
-  return trackerPromise;
+  return trackers[delegate];
 }
 
 const COLORS = ['#c9ff4a', '#4cc3ff'];
@@ -64,30 +64,63 @@ function drawHand(context, canvas, { landmarks, gesture }, color, mirrored) {
   context.restore();
 }
 
-/** Urmărește mâinile din `video` și le desenează pe `canvas`. onHands(hands) primește mâinile ordonate stânga → dreapta pe ecran. */
-export async function trackHands({ video, canvas, mirrored, onHands }) {
-  const tracker = await loadHandTracker();
+/**
+ * Urmărește mâinile din `video` și le desenează pe `canvas`. onHands(hands) primește mâinile ordonate stânga → dreapta
+ * pe ecran; onStatus(text) primește mesaje pentru utilizator (sau '' când totul e bine).
+ */
+export async function trackHands({ video, canvas, mirrored, onHands, onStatus = () => {} }) {
+  let tracker = await loadHandTracker('GPU').catch(() => loadHandTracker('CPU'));
   const context = canvas.getContext('2d');
-  let lastTime = -1, raf = 0, stopped = false;
-  const loop = () => {
+  let stopped = false, handle = 0, lastSeen = performance.now(), hinted = false, failures = 0, lastStamp = 0;
+  // un cadru nou de la cameră: requestVideoFrameCallback unde există (Safari 15.4+, Chrome), altfel ~30 fps
+  const next = () => {
     if (stopped) return;
-    raf = requestAnimationFrame(loop);
-    if (video.readyState < 2 || video.currentTime === lastTime) return;
-    lastTime = video.currentTime;
-    const detection = tracker.detectForVideo(video, performance.now());
-    if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    const flip = mirrored();
-    const hands = (detection.landmarks || [])
-      .map(landmarks => ({ landmarks, gesture: classify(landmarks), x: flip ? 1 - landmarks[0].x : landmarks[0].x }))
-      .sort((a, b) => a.x - b.x);
-    hands.forEach((hand, i) => drawHand(context, canvas, hand, COLORS[i], flip));
-    onHands(hands);
+    if (video.requestVideoFrameCallback) handle = video.requestVideoFrameCallback(detect);
+    else handle = setTimeout(detect, 33);
   };
-  loop();
+  async function detect() {
+    if (stopped) return;
+    if (video.readyState >= 2 && video.videoWidth) {
+      let detection;
+      try {
+        // timestamp strict crescător, cerut de MediaPipe
+        lastStamp = Math.max(lastStamp + 1, performance.now());
+        detection = tracker.detectForVideo(video, lastStamp);
+        failures = 0;
+      } catch (error) {
+        console.warn('Detecția mâinilor a dat eroare', error);
+        if (++failures >= 3) {
+          failures = 0;
+          onStatus('Trec recunoașterea pe procesor…');
+          tracker = await loadHandTracker('CPU');
+          onStatus('');
+        }
+        return next();
+      }
+      if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      const flip = mirrored();
+      const hands = (detection.landmarks || [])
+        .map(landmarks => ({ landmarks, gesture: classify(landmarks), x: flip ? 1 - landmarks[0].x : landmarks[0].x }))
+        .sort((a, b) => a.x - b.x);
+      hands.forEach((hand, i) => drawHand(context, canvas, hand, COLORS[i], flip));
+      const now = performance.now();
+      if (hands.length) {
+        lastSeen = now;
+        if (hinted) { hinted = false; onStatus(''); }
+      } else if (!hinted && now - lastSeen > 6000) {
+        hinted = true;
+        onStatus('Nu văd nicio mână. Ține mâna întreagă în cadru, la 30–50 cm, cu lumină bună.');
+      }
+      onHands(hands);
+    }
+    next();
+  }
+  next();
   return () => {
     stopped = true;
-    cancelAnimationFrame(raf);
+    if (video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(handle);
+    clearTimeout(handle);
     context.clearRect(0, 0, canvas.width, canvas.height);
   };
 }

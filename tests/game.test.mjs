@@ -178,15 +178,16 @@ test('Nu te supăra: om + 2 calculatori, ceasul gazdei duce partida până la ca
   assert.equal(r.ludo.phase, 'over');
 });
 
-test('X și 0: pe rând, X începe, câștig pe o linie de 4', () => {
+test('X și 0: pe rând, X începe, câștig pe o linie de 3', () => {
   let r = reduce(room(), { type: 'select', game: 'xo' }, 'h');
   assert.equal(reduce(r, { type: 'place', cell: 0 }, 'a'), r, 'O nu începe');
-  for (const [cell, who] of [[0, 'h'], [16, 'a'], [1, 'h'], [17, 'a'], [2, 'h'], [18, 'a']]) r = reduce(r, { type: 'place', cell }, who);
+  for (const [cell, who] of [[0, 'h'], [3, 'a'], [1, 'h'], [4, 'a']]) r = reduce(r, { type: 'place', cell }, who);
   assert.equal(reduce(r, { type: 'place', cell: 0 }, 'h'), r, 'celulă ocupată');
-  r = reduce(r, { type: 'place', cell: 3 }, 'h');
+  assert.equal(reduce(r, { type: 'place', cell: 9 }, 'h'), r, 'în afara tablei');
+  r = reduce(r, { type: 'place', cell: 2 }, 'h');
   assert.equal(r.xo.winner, 'h');
-  assert.deepEqual([...r.xo.line].sort((a, b) => a - b), [0, 1, 2, 3]);
-  assert.equal(reduce(r, { type: 'place', cell: 40 }, 'a'), r, 'jocul s-a terminat');
+  assert.deepEqual(r.xo.line, [0, 1, 2]);
+  assert.equal(reduce(r, { type: 'place', cell: 8 }, 'a'), r, 'jocul s-a terminat');
 });
 
 test('X și 0 cu calculatorul: partida se termină', () => {
@@ -197,7 +198,7 @@ test('X și 0 cu calculatorul: partida se termină', () => {
   // gazda e X, primul calculator e O; gazda joacă și ea ca un calculator
   const memo = {};
   let now = 0;
-  for (let i = 0; i < 200 && !r.xo.winner; i++) {
+  for (let i = 0; i < 50 && !r.xo.winner; i++) {
     now += 1000;
     if (r.xo.players[r.xo.turn] === 'h') r = reduce(r, { type: 'place', cell: r.xo.cells.indexOf(null) }, 'h');
     else for (const { action, from } of hostTimers(r, now, memo)) r = reduce(r, action, from);
