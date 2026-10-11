@@ -3,101 +3,196 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Camera Arcade AR</title>
+  <meta name="theme-color" content="#0b0c0f">
+  <title>Camera Arcade</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2.1.0/dist/iconify-icon.min.js"></script>
   <style>
-    :root { --ink:#06080c; --panel:rgba(9,13,20,.84); --line:rgba(255,255,255,.16); --lime:#c9ff4a; --muted:#aab4c3; }
-    * { box-sizing:border-box; }
-    html, body { margin:0; height:100%; }
-    body { min-height:100svh; background:var(--ink); color:#f6f8fb; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif; overflow:hidden; -webkit-tap-highlight-color:transparent; }
-    button, input { font:inherit; }
+    :root {
+      --bg: #0b0c0f;
+      --surface: #14161b;
+      --surface-2: #1c1f26;
+      --surface-3: #252932;
+      --line: rgba(255, 255, 255, .07);
+      --line-2: rgba(255, 255, 255, .13);
+      --text: #f2f3f5;
+      --muted: #8f96a3;
+      --accent: #7c8cff;
+      --accent-soft: rgba(124, 140, 255, .16);
+      --good: #34d399;
+      --bad: #f87171;
+      --glass: rgba(14, 15, 19, .78);
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      min-height: 100svh; overflow: hidden; background: var(--bg); color: var(--text);
+      font: 15px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    /* iconițele se scalează după font-size */
+    iconify-icon { display: inline-block; font-size: 1.2em; line-height: 1; flex: none; vertical-align: -0.2em; }
+    [hidden] { display: none !important; }
 
     /* fundal: scena 3D / camera AR, sau camera pentru piatră-hârtie-foarfecă */
-    #stage-root, #rps-view { position:fixed; inset:0; overflow:hidden; background:radial-gradient(circle at 50% 30%,#203248 0,#080b12 55%,#050609 100%); touch-action:none; }
-    #rps-view { display:none; }
-    #rps-view.show { display:block; }
-    .stage-layer, #rps-video, #rps-canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-    .stage-video { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
-    #rps-view.mirror #rps-video, #rps-view.mirror #rps-canvas { transform:scaleX(-1); }
+    #stage-root, #rps-view { position: fixed; inset: 0; overflow: hidden; background: var(--bg); touch-action: none; }
+    #rps-view { display: none; }
+    #rps-view.show { display: block; }
+    .stage-layer, #rps-video, #rps-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .stage-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    #rps-view.mirror #rps-video, #rps-view.mirror #rps-canvas { transform: scaleX(-1); }
 
     /* interfața stă deasupra; zonele goale lasă atingerile să treacă la scenă */
-    #ui { position:fixed; inset:0; z-index:10; pointer-events:none; }
-    .screen { position:absolute; inset:0; display:none; flex-direction:column; gap:10px; padding:max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom)); overflow-y:auto; }
-    .screen.show { display:flex; }
-    #lobby, #name-screen { pointer-events:auto; background:radial-gradient(circle at 50% 20%,#203248 0,#080b12 60%,#050609 100%); }
-    .panel, button, input, a, label { pointer-events:auto; }
-    .panel { width:min(560px,100%); margin:0 auto; padding:14px; border:1px solid var(--line); border-radius:18px; background:var(--panel); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); }
-    .eyebrow { color:var(--lime); font-size:10px; font-weight:900; letter-spacing:.15em; text-transform:uppercase; }
-    h1 { margin:4px 0 0; font-size:clamp(28px,7vw,40px); line-height:.95; letter-spacing:-.05em; }
-    h2 { margin:0 0 10px; font-size:15px; letter-spacing:-.01em; }
-    p { margin:0; }
-    .muted { color:var(--muted); font-size:13px; line-height:1.4; }
-    .row { display:flex; gap:8px; align-items:center; }
-    .row > * { flex:1; }
-    button { min-height:44px; padding:0 14px; border:1px solid var(--line); border-radius:12px; background:#202832; color:#f3f6fa; font-size:14px; font-weight:800; cursor:pointer; }
-    button.primary, button.selected { background:var(--lime); border-color:var(--lime); color:#0b1105; }
-    button:disabled { opacity:.4; cursor:not-allowed; }
-    button.small { min-height:34px; padding:0 10px; font-size:12px; flex:none; }
-    input { min-height:44px; padding:0 12px; border:1px solid var(--line); border-radius:12px; background:#0d131c; color:#fff; font-size:16px; min-width:0; }
-    input.code { text-transform:uppercase; letter-spacing:.3em; text-align:center; font-weight:900; }
+    #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+    .screen {
+      position: absolute; inset: 0; display: none; flex-direction: column; gap: 12px; overflow-y: auto;
+      padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    }
+    .screen.show { display: flex; }
+    #lobby, #name-screen { pointer-events: auto; background: var(--bg); }
+    .wrap { width: min(520px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+    .card, button, input, a, label, .sheet-panel { pointer-events: auto; }
+
+    /* tipografie */
+    h1 { margin: 0; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -.02em; }
+    h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+    p { margin: 0; }
+    .muted { color: var(--muted); font-size: 13px; }
+
+    /* butoane */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 16px;
+      border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface-2); font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: transform .08s ease, background .15s ease;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn.primary { background: var(--text); color: #0b0c0f; border-color: transparent; }
+    .btn.ghost { background: transparent; }
+    .btn.big { min-height: 56px; font-size: 16px; border-radius: 16px; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .icon-btn {
+      display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; padding: 0; cursor: pointer;
+      border: 1px solid var(--line-2); border-radius: 999px; background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    }
+    .icon-btn iconify-icon { font-size: 20px; }
+    .icon-btn.on { background: var(--accent); border-color: var(--accent); color: #0b0c0f; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row > * { flex: 1; }
+    input {
+      min-height: 48px; min-width: 0; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 12px;
+      background: var(--surface); font-size: 16px; outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    input.code { text-transform: uppercase; letter-spacing: .4em; text-align: center; font-weight: 700; }
 
     /* nume */
-    #name-screen { justify-content:center; }
-    #name-screen .panel { display:flex; flex-direction:column; gap:12px; }
+    #name-screen { justify-content: center; }
+    #name-form { gap: 14px; }
 
     /* lobby */
-    .hello h1 { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
-    #rename { min-height:0; padding:2px 10px; border-radius:10px; font-size:inherit; font-weight:900; letter-spacing:-.05em; background:none; border:1px dashed rgba(255,255,255,.3); color:#fff; }
-    #games { display:grid; gap:8px; }
-    #games button { min-height:68px; text-align:left; display:flex; align-items:center; gap:12px; font-size:17px; }
-    #games button span { font-size:30px; }
-    #games button small { display:block; font-size:12px; font-weight:600; color:var(--muted); margin-top:2px; }
-    #players { display:flex; flex-wrap:wrap; gap:8px; }
-    .pchip { display:inline-flex; align-items:center; gap:8px; min-height:38px; padding:0 12px; border-radius:999px; border:1px solid var(--line); background:rgba(255,255,255,.06); font-size:14px; font-weight:800; flex:none; }
-    button.pchip.mine { border-color:var(--lime); }
-    .pchip .x { margin-left:2px; color:var(--muted); font-weight:900; }
-    #code-big { font-size:42px; font-weight:900; letter-spacing:.25em; color:var(--lime); text-align:center; margin:4px 0; }
-    .dot { width:14px; height:14px; border-radius:50%; flex:none; border:2px solid rgba(255,255,255,.6); }
+    .brand { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; font-weight: 600; }
+    .brand .mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
+    .hello { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    #rename { width: 36px; height: 36px; }
+    .section { display: flex; flex-direction: column; gap: 10px; }
+    .list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+    .list > button {
+      display: flex; align-items: center; gap: 14px; min-height: 68px; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--line);
+      background: transparent; text-align: left; cursor: pointer;
+    }
+    .list > button:last-child { border-bottom: 0; }
+    .list > button:active { background: var(--surface-2); }
+    .list > button:disabled { opacity: .55; cursor: default; }
+    .tile { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 12px; background: var(--surface-3); }
+    .tile iconify-icon { font-size: 24px; }
+    .list .text { flex: 1; min-width: 0; }
+    .list .title { display: block; font-weight: 600; }
+    .list .sub { display: block; color: var(--muted); font-size: 13px; }
+    .list .chev { color: var(--muted); }
+    .card { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); display: flex; flex-direction: column; gap: 12px; }
+
+    /* jucători: avatare cu inițiala, în culoarea jucătorului */
+    #players { display: flex; flex-wrap: wrap; gap: 14px; }
+    .player { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 64px; padding: 0; border: 0; background: none; cursor: default; }
+    button.player { cursor: pointer; }
+    .player .name { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+    .player.mine .name { color: var(--text); font-weight: 600; }
+    .avatar {
+      position: relative; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 999px;
+      font-weight: 700; font-size: 18px; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+    }
+    .player.mine .avatar { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+    .avatar .badge {
+      position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 20px; height: 20px;
+      border-radius: 999px; background: var(--surface-3); border: 2px solid var(--bg); font-size: 11px;
+    }
+    .avatar .badge iconify-icon { font-size: 12px; }
+    .avatar.add { background: transparent; border: 1.5px dashed var(--line-2); color: var(--muted); box-shadow: none; }
+    #code-big { font: 700 40px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .3em; text-align: center; padding: 8px 0 2px; }
 
     /* joc */
-    #game { justify-content:flex-start; }
-    .top { display:flex; align-items:center; gap:8px; }
-    .top h2 { margin:0; flex:1; font-size:18px; text-shadow:0 2px 10px #000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    button.icon { min-height:40px; padding:0 12px; flex:none; background:var(--panel); }
-    .chip { padding:6px 10px; border-radius:999px; border:1px solid var(--line); background:var(--panel); font-size:12px; font-weight:800; flex:none; }
-    #scoreboard { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:8px; }
-    #scoreboard .chip { display:flex; align-items:center; gap:6px; }
-    #scoreboard .chip.turn { border-color:var(--lime); color:var(--lime); }
-    #info { text-align:center; pointer-events:none; margin-top:6px; }
-    #info-big { font-size:clamp(20px,5.5vw,30px); font-weight:900; letter-spacing:-.03em; text-shadow:0 2px 14px #000; }
-    #info-small { margin-top:6px; color:#e9eef5; font-size:14px; text-shadow:0 2px 8px #000; }
-    #picks { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:10px; }
-    #picks .chip.win { border-color:var(--lime); color:var(--lime); }
-    #bottom { margin-top:auto; width:min(560px,100%); align-self:center; display:flex; flex-direction:column; gap:8px; }
-    #main-action { min-height:58px; font-size:18px; border-radius:16px; }
-    #pawn-buttons:empty { display:none; }
-    #pawn-buttons button { min-height:52px; background:var(--panel); }
-    #ar-status { text-align:center; padding:10px 12px; border-radius:12px; background:var(--panel); color:#fff; font-weight:700; }
-    #ar-status:empty { display:none; }
-    /* meniul „Unde stă jocul?” */
-    #sheet { position:absolute; inset:0; display:flex; align-items:flex-end; background:rgba(0,0,0,.45); pointer-events:auto; padding:14px; padding-bottom:max(14px,env(safe-area-inset-bottom)); }
-    #sheet .panel { display:flex; flex-direction:column; gap:8px; }
-    #sheet button[data-mode] { min-height:62px; text-align:left; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; font-size:16px; }
-    #sheet button small { font-size:12px; font-weight:600; color:var(--muted); margin-top:2px; }
-    #sheet button.selected small { color:#24310c; }
+    #game { justify-content: flex-start; }
+    .topbar { display: flex; align-items: center; gap: 8px; }
+    .topbar h2 { flex: 1; margin: 0 4px; font-size: 17px; font-weight: 600; color: var(--text); text-shadow: 0 1px 12px rgba(0,0,0,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border-radius: 999px;
+      background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      font-size: 13px; font-weight: 500; white-space: nowrap;
+    }
+    .pill .dot { width: 8px; height: 8px; border-radius: 999px; }
+    .pill.turn { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+    .pill.win { border-color: var(--good); color: var(--good); }
+    .pill strong { font-weight: 700; }
+    #game-code { font-family: ui-monospace, Menlo, monospace; letter-spacing: .15em; }
+    #scoreboard, #picks { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+    #info { text-align: center; pointer-events: none; display: flex; flex-direction: column; gap: 6px; padding: 4px 8px; }
+    #info-big { font-size: 24px; font-weight: 700; letter-spacing: -.02em; text-shadow: 0 2px 16px rgba(0,0,0,.7); }
+    #info-big iconify-icon { font-size: 1em; }
+    #info-small { font-size: 14px; color: #d7dbe2; text-shadow: 0 1px 10px rgba(0,0,0,.8); }
+    #bottom { margin-top: auto; width: min(520px, 100%); align-self: center; display: flex; flex-direction: column; gap: 8px; }
+    #pawn-buttons:empty { display: none; }
+    #pawn-buttons .btn, #bet-button, #rps-bot { background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    #ar-status { text-align: center; padding: 10px 14px; border-radius: 12px; background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); font-size: 14px; }
+    #ar-status:empty { display: none; }
+
+    /* foi de jos (alegerea modului, pariul) */
+    .sheet { position: absolute; inset: 0; display: flex; align-items: flex-end; background: rgba(0,0,0,.5); pointer-events: auto; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+    .sheet-panel { width: min(520px, 100%); margin: 0 auto; padding: 8px 16px 16px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
+    .handle { width: 36px; height: 4px; border-radius: 999px; background: var(--line-2); margin: 2px auto 6px; }
+    .sheet-panel h3 { margin: 0; font-size: 17px; font-weight: 600; }
+    .options { display: flex; flex-direction: column; gap: 8px; }
+    .options button { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); text-align: left; cursor: pointer; }
+    .options button .text { flex: 1; }
+    .options button .title { display: block; font-weight: 600; }
+    .options button .sub { display: block; color: var(--muted); font-size: 13px; }
+    .options button .check { color: var(--accent); visibility: hidden; }
+    .options button.selected { border-color: var(--accent); background: var(--accent-soft); }
+    .options button.selected .check { visibility: visible; }
+    .options button.selected .tile { background: var(--accent); color: #0b0c0f; }
+    .link { color: var(--accent); text-decoration: none; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+
     /* pariuri: camera cu chenarul pentru bancnotă */
-    #money-button.on { background:var(--lime); color:#0b1105; border-color:var(--lime); }
-    #bet-sheet { position:absolute; inset:0; display:flex; flex-direction:column; background:#000; pointer-events:auto; z-index:5; }
-    #bet-view { position:relative; flex:1; overflow:hidden; }
-    #bet-video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-    #bet-guide { position:absolute; left:8%; right:8%; top:50%; aspect-ratio:2 / 1; transform:translateY(-50%); border:3px dashed var(--lime); border-radius:14px; box-shadow:0 0 0 999px rgba(0,0,0,.35); }
-    #bet-seen { position:absolute; left:0; right:0; top:-44px; text-align:center; font-size:20px; font-weight:900; text-shadow:0 2px 10px #000; }
-    #bet-panel { border-radius:18px 18px 0 0; width:100%; padding-bottom:max(14px,env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:8px; }
-    #bet-notes { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
-    #bet-notes button { min-height:40px; padding:0; }
-    #bet-panel label { display:flex; align-items:center; gap:8px; }
-    #toast { position:fixed; left:50%; top:max(16px,env(safe-area-inset-top)); transform:translate(-50%,-160%); z-index:30; max-width:calc(100% - 32px); padding:12px 16px; border-radius:14px; background:#2b1416; border:1px solid #ff6b6b; font-weight:800; font-size:14px; transition:transform .25s ease; pointer-events:none; }
-    #toast.show { transform:translate(-50%,0); }
-    [hidden] { display:none !important; }
+    #bet-sheet { position: absolute; inset: 0; display: flex; flex-direction: column; background: #000; pointer-events: auto; z-index: 5; }
+    #bet-view { position: relative; flex: 1; overflow: hidden; }
+    #bet-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #bet-guide { position: absolute; left: 8%; right: 8%; top: 50%; aspect-ratio: 2 / 1; transform: translateY(-50%); border: 2px solid rgba(255,255,255,.9); border-radius: 16px; box-shadow: 0 0 0 999px rgba(0,0,0,.45); }
+    #bet-seen { position: absolute; left: 0; right: 0; top: -46px; text-align: center; font-size: 18px; font-weight: 600; text-shadow: 0 2px 10px #000; }
+    #bet-panel { border-radius: 22px 22px 0 0; width: 100%; margin: 0; border-bottom: 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+    #bet-notes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    #bet-notes button { min-height: 42px; padding: 0; font-size: 14px; }
+    #bet-panel label { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+    #bet-panel input[type=checkbox] { width: 18px; height: 18px; min-height: 0; accent-color: var(--accent); }
+
+    #toast {
+      position: fixed; left: 50%; top: max(16px, env(safe-area-inset-top)); transform: translate(-50%, -160%); z-index: 30;
+      max-width: calc(100% - 32px); padding: 12px 16px; border-radius: 14px; background: var(--surface-3); border: 1px solid var(--line-2);
+      font-weight: 500; font-size: 14px; transition: transform .25s ease; pointer-events: none; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+    }
+    #toast.show { transform: translate(-50%, 0); }
   </style>
   <script type="importmap">
     { "imports": {
@@ -116,67 +211,72 @@
 
   <main id="ui">
     <section id="name-screen" class="screen">
-      <form class="panel" id="name-form">
-        <div><div class="eyebrow">Camera Arcade AR</div><h1>Cum te cheamă?</h1></div>
-        <p class="muted">Numele apare la ceilalți jucători când jucați împreună.</p>
+      <form class="wrap" id="name-form">
+        <div class="brand"><span class="mark"><iconify-icon icon="ph:cube-focus"></iconify-icon></span>Camera Arcade</div>
+        <h1>Cum te cheamă?</h1>
+        <p class="muted">Numele îl văd ceilalți jucători când jucați împreună.</p>
         <input id="name-input" maxlength="20" placeholder="Numele tău" autocomplete="nickname" required>
-        <button class="primary" type="submit">Intră</button>
+        <button class="btn primary big" type="submit">Continuă</button>
       </form>
     </section>
 
     <section id="lobby" class="screen">
-      <header class="panel hello">
-        <div class="eyebrow">Camera Arcade AR</div>
-        <h1>Salut, <button id="rename" title="Schimbă numele"><span id="hello-name"></span> ✏️</button></h1>
-      </header>
-
-      <div class="panel">
-        <h2 id="games-title">Ce jucăm?</h2>
-        <div id="games">
-          <button data-game="barbut"><span>🎲</span><div>Barbut<small>Două zaruri, suma cea mai mare câștigă</small></div></button>
-          <button data-game="rps"><span>✊</span><div>Piatră–Hârtie–Foarfecă<small>Arăți gestul cu mâna, în fața camerei</small></div></button>
-          <button data-game="ludo"><span>🎯</span><div>Nu te supăra, frate<small>2–4 jucători, tabla pe masă</small></div></button>
-          <button data-game="jenga"><span>🧱</span><div>Jenga<small>Tragi o piesă din turn — cine îl dărâmă pierde</small></div></button>
-          <button data-game="xo"><span>❌</span><div>X și 0<small>Clasic, 3×3, tabla pe masă</small></div></button>
+      <div class="wrap">
+        <div class="brand"><span class="mark"><iconify-icon icon="ph:cube-focus"></iconify-icon></span>Camera Arcade</div>
+        <div class="hello">
+          <h1>Salut, <span id="hello-name"></span></h1>
+          <button class="icon-btn" id="rename" aria-label="Schimbă numele"><iconify-icon icon="ph:pencil-simple"></iconify-icon></button>
         </div>
-        <p class="muted" id="games-hint" style="margin-top:8px"></p>
-      </div>
 
-      <div class="panel">
-        <h2>Jucători</h2>
-        <div id="players"></div>
-        <p class="muted" style="margin-top:8px">Atinge-ți numele ca să-ți schimbi culoarea.</p>
-      </div>
-
-      <div class="panel" id="room-panel">
-        <div id="room-local">
-          <h2>Cu prietenii, pe telefoanele lor</h2>
-          <div class="row">
-            <button class="primary" id="create-room">Creează cameră</button>
-            <button id="show-join">Am un cod</button>
+        <div class="section">
+          <h2 id="games-title">Jocuri</h2>
+          <div class="list" id="games">
+            <button data-game="barbut"><span class="tile" style="color:#fbbf24"><iconify-icon icon="ph:dice-five"></iconify-icon></span><span class="text"><span class="title">Barbut</span><span class="sub">Două zaruri, suma mai mare câștigă</span></span><iconify-icon class="chev" icon="ph:caret-right"></iconify-icon></button>
+            <button data-game="rps"><span class="tile" style="color:#f472b6"><iconify-icon icon="ph:hand-peace"></iconify-icon></span><span class="text"><span class="title">Piatră, hârtie, foarfecă</span><span class="sub">Arăți gestul camerei</span></span><iconify-icon class="chev" icon="ph:caret-right"></iconify-icon></button>
+            <button data-game="ludo"><span class="tile" style="color:#60a5fa"><iconify-icon icon="ph:circles-four"></iconify-icon></span><span class="text"><span class="title">Nu te supăra, frate</span><span class="sub">2–4 jucători, tabla pe masă</span></span><iconify-icon class="chev" icon="ph:caret-right"></iconify-icon></button>
+            <button data-game="jenga"><span class="tile" style="color:#d6a76c"><iconify-icon icon="ph:stack"></iconify-icon></span><span class="text"><span class="title">Jenga</span><span class="sub">Tragi o piesă; cine dărâmă turnul pierde</span></span><iconify-icon class="chev" icon="ph:caret-right"></iconify-icon></button>
+            <button data-game="xo"><span class="tile" style="color:#a78bfa"><iconify-icon icon="ph:grid-nine"></iconify-icon></span><span class="text"><span class="title">X și 0</span><span class="sub">Clasic, 3×3</span></span><iconify-icon class="chev" icon="ph:caret-right"></iconify-icon></button>
           </div>
-          <form class="row" id="join-form" style="margin-top:8px" hidden>
-            <input id="join-code" class="code" maxlength="4" placeholder="COD" autocomplete="off" autocapitalize="characters">
-            <button class="primary" type="submit">Intră</button>
-          </form>
+          <p class="muted" id="games-hint"></p>
         </div>
-        <div id="room-online" hidden>
-          <h2>Codul camerei</h2>
-          <div id="code-big"></div>
-          <p class="muted" id="room-hint"></p>
-          <div class="row" style="margin-top:10px"><button id="leave-room">Ieși din cameră</button></div>
+
+        <div class="section">
+          <h2>Jucători</h2>
+          <div class="card">
+            <div id="players"></div>
+            <p class="muted">Atinge-ți avatarul ca să-ți schimbi culoarea.</p>
+          </div>
+        </div>
+
+        <div class="section" id="room-panel">
+          <h2>Cu prietenii</h2>
+          <div class="card" id="room-local">
+            <p class="muted">Fiecare joacă de pe telefonul lui. Creează o cameră și dă-le codul.</p>
+            <button class="btn primary" id="create-room"><iconify-icon icon="ph:globe"></iconify-icon>Creează cameră</button>
+            <button class="btn" id="show-join"><iconify-icon icon="ph:link"></iconify-icon>Intră cu un cod</button>
+            <form class="row" id="join-form" hidden>
+              <input id="join-code" class="code" maxlength="4" placeholder="COD" autocomplete="off" autocapitalize="characters">
+              <button class="btn primary" type="submit">Intră</button>
+            </form>
+          </div>
+          <div class="card" id="room-online" hidden>
+            <p class="muted">Codul camerei</p>
+            <div id="code-big"></div>
+            <p class="muted" id="room-hint"></p>
+            <button class="btn ghost" id="leave-room"><iconify-icon icon="ph:sign-out"></iconify-icon>Ieși din cameră</button>
+          </div>
         </div>
       </div>
     </section>
 
     <section id="game" class="screen">
-      <div class="top">
-        <button class="icon" id="back" aria-label="Înapoi la meniu">←</button>
+      <div class="topbar">
+        <button class="icon-btn" id="back" aria-label="Înapoi"><iconify-icon icon="ph:arrow-left"></iconify-icon></button>
         <h2 id="game-title"></h2>
-        <span class="chip" id="game-code" hidden></span>
-        <button class="icon" id="money-button" hidden title="Pariuri pe bani">💸</button>
-        <button class="icon" id="view-button">📱 Ecran ▾</button>
-        <button class="icon" id="flip-camera" hidden aria-label="Schimbă camera">🔄</button>
+        <span class="pill" id="game-code" hidden></span>
+        <button class="icon-btn" id="money-button" hidden aria-label="Pariuri pe bani"><iconify-icon icon="ph:hand-coins"></iconify-icon></button>
+        <button class="icon-btn" id="view-button" aria-label="Unde stă jocul"><iconify-icon icon="ph:device-mobile"></iconify-icon></button>
+        <button class="icon-btn" id="flip-camera" hidden aria-label="Schimbă camera"><iconify-icon icon="ph:camera-rotate"></iconify-icon></button>
       </div>
       <div id="scoreboard"></div>
       <div id="info">
@@ -187,9 +287,9 @@
       <div id="bottom">
         <p id="ar-status"></p>
         <div class="row" id="pawn-buttons"></div>
-        <button id="bet-button" hidden>💵 Pune bani</button>
-        <button class="primary" id="main-action" hidden></button>
-        <button id="rps-bot" hidden>Joacă contra calculatorului</button>
+        <button class="btn" id="bet-button" hidden></button>
+        <button class="btn primary big" id="main-action" hidden></button>
+        <button class="btn" id="rps-bot" hidden><iconify-icon icon="ph:robot"></iconify-icon>Joacă contra calculatorului</button>
       </div>
 
       <div id="bet-sheet" hidden>
@@ -197,26 +297,30 @@
           <video id="bet-video" autoplay muted playsinline></video>
           <div id="bet-guide"><span id="bet-seen">Pune bancnota în chenar</span></div>
         </div>
-        <div class="panel" id="bet-panel">
-          <button class="primary" id="bet-confirm" disabled>Caut bancnota…</button>
+        <div class="sheet-panel" id="bet-panel">
+          <div class="handle"></div>
+          <button class="btn primary big" id="bet-confirm" disabled>Caut bancnota…</button>
           <p class="muted" id="bet-hint">Nu o recunoaște? Atinge valoarea:</p>
           <div id="bet-notes"></div>
-          <label class="muted"><input type="checkbox" id="bet-teach"> Învăț bancnota: pune-o în chenar și atinge-i valoarea</label>
-          <div class="row"><button id="bet-clear">Anulează pariul</button><button id="bet-done">Gata</button></div>
+          <label><input type="checkbox" id="bet-teach"> Învăț bancnota: pune-o în chenar și atinge-i valoarea</label>
+          <div class="row"><button class="btn ghost" id="bet-clear">Anulează pariul</button><button class="btn" id="bet-done">Gata</button></div>
         </div>
       </div>
 
-      <div id="sheet" hidden>
-        <div class="panel">
-          <h2>Unde stă jocul?</h2>
-          <button data-mode="screen">📱 Pe ecran<small>Vedere 3D, fără cameră</small></button>
-          <button data-mode="table">🪑 Pe masa mea<small>Camera caută masa, apoi atingi unde pui jocul</small></button>
-          <button data-mode="marker">🎯 Pe markerul comun<small>Cei din aceeași cameră văd tabla în același loc</small></button>
-          <div class="row">
-            <button id="replace-table" hidden>↻ Mută pe masă</button>
-            <a class="muted" href="marker.html" target="_blank" style="color:var(--lime);flex:none;align-self:center">Markerul de printat</a>
+      <div id="sheet" class="sheet" hidden>
+        <div class="sheet-panel">
+          <div class="handle"></div>
+          <h3>Unde stă jocul?</h3>
+          <div class="options">
+            <button data-mode="screen"><span class="tile"><iconify-icon icon="ph:device-mobile"></iconify-icon></span><span class="text"><span class="title">Pe ecran</span><span class="sub">Vedere 3D, fără cameră</span></span><iconify-icon class="check" icon="ph:check"></iconify-icon></button>
+            <button data-mode="table"><span class="tile"><iconify-icon icon="ph:cube-focus"></iconify-icon></span><span class="text"><span class="title">Pe masa mea</span><span class="sub">Camera caută masa, apoi atingi unde pui jocul</span></span><iconify-icon class="check" icon="ph:check"></iconify-icon></button>
+            <button data-mode="marker"><span class="tile"><iconify-icon icon="ph:qr-code"></iconify-icon></span><span class="text"><span class="title">Pe markerul comun</span><span class="sub">Cei din aceeași cameră văd tabla în același loc</span></span><iconify-icon class="check" icon="ph:check"></iconify-icon></button>
           </div>
-          <button id="sheet-close">Închide</button>
+          <div class="row">
+            <button class="btn" id="replace-table" hidden><iconify-icon icon="ph:arrows-clockwise"></iconify-icon>Mută pe masă</button>
+            <a class="link" href="marker.html" target="_blank" style="flex:none"><iconify-icon icon="ph:qr-code"></iconify-icon>Markerul de printat</a>
+          </div>
+          <button class="btn ghost" id="sheet-close">Închide</button>
         </div>
       </div>
     </section>

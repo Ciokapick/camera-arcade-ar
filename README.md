@@ -3,7 +3,7 @@
 Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), singur sau cu prietenii:
 
 - **Barbut**: două zaruri 3D cu fizică reală; pe rând, cea mai mare sumă ia runda (la egalitate aruncă din nou doar cei la egalitate).
-  - **💸 Pe bani** (bonus, îl pornește gazda): fiecare își pune bancnota în fața camerei înainte să arunce; aplicația recunoaște bancnota (1–500 lei), câștigătorul rundei ia potul și se ține soldul fiecăruia.
+  - **Pe bani** (bonus, îl pornește gazda): fiecare își pune bancnota în fața camerei înainte să arunce; aplicația recunoaște bancnota (1–500 lei), câștigătorul rundei ia potul și se ține soldul fiecăruia.
 - **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din cameră (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru. Singur pe telefon: o mână = tu contra calculatorului, două mâini = doi jucători.
 - **Nu te supăra, frate**: 2–4 jucători, fiecare cu culoarea aleasă, tabla 3D pe masă.
 - **Jenga**: turn de 54 de piese pe masă; pe rând tragi o piesă, ea urcă sus; cine dărâmă turnul pierde. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
@@ -12,12 +12,12 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 ## Cum se joacă
 
 1. La prima intrare îți scrii numele.
-2. **Creează cameră** → primești un cod de 4 litere; prietenii apasă **Intră** și scriu codul. Fără cameră joci pe telefonul tău, cu calculatorul (**+ Calculator**).
+2. **Creează cameră** → primești un cod de 4 litere; prietenii apasă **Intră cu un cod** și îl scriu. Fără cameră joci pe telefonul tău, cu calculatorul (**+ Calculator**).
 3. Gazda alege jocul; toți intră automat în el.
 4. Alegi unde stă jocul:
-   - **📱 Ecran** — vedere 3D, fără AR.
-   - **🪑 Pe masa mea** — aplicația caută întâi o suprafață plană, apoi atingi unde vrei tabla/zarurile. Merge oriunde, fiecare pe masa lui (inclusiv cei care nu sunt în aceeași cameră).
-   - **🎯 Marker comun** — pentru cei din aceeași cameră: pui pe masă [markerul](marker.html) (printat sau pe o tabletă) și tabla apare exact pe el, **în același loc pentru toți**.
+   - **Pe ecran** — vedere 3D, fără AR.
+   - **Pe masa mea** — aplicația caută întâi o suprafață plană, apoi atingi unde vrei tabla/zarurile. Merge oriunde, fiecare pe masa lui (inclusiv cei care nu sunt în aceeași cameră).
+   - **Pe markerul comun** — pentru cei din aceeași cameră: pui pe masă [markerul](marker.html) (printat sau pe o tabletă) și tabla apare exact pe el, **în același loc pentru toți**.
 
 ## Cum e făcut
 
@@ -33,7 +33,7 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 | `ar.js` | scena: ecran / WebXR (Android) / AlvaAR SLAM + giroscop (iPhone) / marker ArUco (js-aruco2) |
 | `hands.js` | recunoașterea mâinilor și a gestului |
 | `banknotes.js`, `banknote-refs.json` | recunoașterea bancnotelor: rețea neuronală (MediaPipe Image Embedder) + cel mai apropiat vecin |
-| `app.js`, `index.html` | interfața |
+| `app.js`, `index.html` | interfața (Inter + iconițe Phosphor prin Iconify) |
 
 Biblioteci (din CDN): three.js, cannon-es, PeerJS, MediaPipe Tasks Vision, [AlvaAR](https://github.com/alanross/AlvaAR) (GPL-3.0), js-aruco2.
 

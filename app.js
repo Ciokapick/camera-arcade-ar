@@ -22,7 +22,7 @@ const storage = {
 // „1 leu”, „5 lei”
 const leiText = v => (Math.abs(v) === 1 ? `${v} leu` : `${v} lei`);
 const d6 = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 6);
-const EMOJI = { 'Piatră': '✊', 'Hârtie': '✋', 'Foarfecă': '✌️' };
+const GESTURE_ICON = { 'Piatră': 'hand-fist', 'Hârtie': 'hand-palm', 'Foarfecă': 'hand-peace' };
 const GAME_TITLES = { barbut: 'Barbut', rps: 'Piatră–Hârtie–Foarfecă', ludo: 'Nu te supăra, frate', xo: 'X și 0', jenga: 'Jenga' };
 
 let myName = storage.get('camera-arcade-name') || '';
@@ -41,7 +41,11 @@ function toast(text) {
 const showScreen = id => document.querySelectorAll('.screen').forEach(s => s.classList.toggle('show', s.id === id));
 const me = () => room && playerById(room.state, room.selfId);
 const nameOf = id => playerById(room.state, id)?.name ?? '?';
+const nm = id => escapeHtml(nameOf(id));
 const dot = color => `<span class="dot" style="background:${ludo.COLOR_HEX[color]}"></span>`;
+// iconițe Phosphor prin Iconify
+const ic = name => `<iconify-icon icon="ph:${name}"></iconify-icon>`;
+const label = (icon, text) => `${ic(icon)}<span>${text}</span>`;
 const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 // ---------------------------------------------------------------- nume
@@ -144,14 +148,17 @@ function renderLobby(state, self) {
   $('#room-hint').textContent = room.isHost
     ? 'Prietenii apasă „Am un cod” și scriu codul ăsta. Tu alegi jocul.'
     : `Gazda (${nameOf(state.hostId)}) alege jocul — intri automat în el.`;
-  // jucătorii ca etichete: a ta își schimbă culoarea la atingere, calculatorul se scoate cu ×
+  // jucătorii ca avatare cu inițiala: al tău își schimbă culoarea la atingere; gazda scoate calculatorul atingându-l
+  const initial = name => escapeHtml([...String(name).trim()][0]?.toUpperCase() ?? '?');
+  const avatar = (p, badge = '') => `<span class="avatar" style="background:${ludo.COLOR_HEX[p.color]}">${initial(p.name)}${badge ? `<span class="badge">${ic(badge)}</span>` : ''}</span>`;
   $('#players').innerHTML = state.players.map(p => {
-    const label = `${dot(p.color)}${escapeHtml(p.name)}${p.bot ? ' 🤖' : ''}`;
-    if (p.id === self.id) return `<button class="pchip mine" id="my-chip" title="Schimbă culoarea">${label}</button>`;
-    if (p.bot && room.isHost) return `<button class="pchip" data-kick="${p.id}" title="Scoate calculatorul">${label}<span class="x">×</span></button>`;
-    return `<span class="pchip">${label}</span>`;
-  }).join('') + (room.isHost && state.players.length < 4 ? '<button class="pchip" id="add-bot">+ Calculator</button>' : '');
-  $('#games-title').textContent = room.isHost ? 'Ce jucăm?' : 'Jocuri';
+    const name = `<span class="name">${escapeHtml(p.name)}</span>`;
+    const badge = p.bot ? 'robot' : p.id === state.hostId ? 'crown' : '';
+    if (p.id === self.id) return `<button class="player mine" id="my-chip" aria-label="Schimbă culoarea">${avatar(p, badge)}${name}</button>`;
+    if (p.bot && room.isHost) return `<button class="player" data-kick="${p.id}" aria-label="Scoate calculatorul">${avatar(p, 'x')}${name}</button>`;
+    return `<span class="player">${avatar(p, badge)}${name}</span>`;
+  }).join('') + (room.isHost && state.players.length < 4 ? `<button class="player" id="add-bot" aria-label="Adaugă calculator"><span class="avatar add">${ic('plus')}</span><span class="name">Calculator</span></button>` : '');
+  $('#games-title').textContent = 'Jocuri';
   document.querySelectorAll('#games button').forEach(b => { b.disabled = !room.isHost; });
   $('#games-hint').textContent = room.isHost ? '' : 'Gazda alege jocul.';
 }
@@ -227,7 +234,7 @@ function renderGame(state, self) {
 // la finalul partidei, gazda poate porni direct una nouă
 function newGameButton(over) {
   if (!over || !room.isHost) return false;
-  $('#main-action').textContent = '🔄 Joc nou';
+  $('#main-action').innerHTML = label('arrows-clockwise', 'Joc nou');
   $('#main-action').hidden = false;
   view.newGame = true;
   return true;
@@ -308,7 +315,7 @@ async function openMode(mode) {
   }
   document.querySelectorAll('#sheet [data-mode]').forEach(b => b.classList.toggle('selected', b.dataset.mode === v.mode));
   $('#replace-table').hidden = v.mode !== 'table';
-  $('#view-button').textContent = `${{ screen: '📱 Ecran', table: '🪑 Masă', marker: '🎯 Marker' }[v.mode]} ▾`;
+  $('#view-button').innerHTML = ic({ screen: 'device-mobile', table: 'cube-focus', marker: 'qr-code' }[v.mode]);
 }
 
 $('#view-button').addEventListener('click', () => { $('#sheet').hidden = false; });
@@ -358,7 +365,7 @@ $('#main-action').addEventListener('click', mainAction);
 const tapAction = () => { if (!['xo', 'jenga'].includes(room?.state.game)) mainAction(); };
 
 function scoreChip(player, score, isTurn, extra = '') {
-  return `<span class="chip ${isTurn ? 'turn' : ''}">${dot(player.color)}${escapeHtml(player.name)}${player.id === room.selfId ? ' (tu)' : ''} · ${score}${extra}</span>`;
+  return `<span class="pill ${isTurn ? 'turn' : ''}">${dot(player.color)}${escapeHtml(player.name)}${player.id === room.selfId ? ' (tu)' : ''} <strong>${score}</strong>${extra}</span>`;
 }
 
 function renderBarbut(state, self) {
@@ -367,26 +374,26 @@ function renderBarbut(state, self) {
   const lei = v => `${v > 0 ? '+' : ''}${leiText(v)}`;
   $('#scoreboard').innerHTML = state.players.map(p => scoreChip(p, b.scores[p.id] ?? 0, p.id === turn, b.money ? ` · ${lei(b.balance[p.id] ?? 0)}` : '')).join('');
   const r = b.result;
-  $('#info-big').textContent = r ? (r.type === 'win' ? `🏆 ${nameOf(r.id)} ia runda cu ${r.sum}!` : `Egalitate la ${r.sum}!`) : `Runda ${b.round}`;
-  const tie = r?.type === 'tie' ? `Mai aruncă doar: ${r.ids.map(nameOf).join(', ')}. ` : '';
+  $('#info-big').innerHTML = r ? (r.type === 'win' ? `${ic('trophy')} ${nm(r.id)} ia runda cu ${r.sum}` : `Egalitate la ${r.sum}`) : `Runda ${b.round}`;
+  const tie = r?.type === 'tie' ? `Mai aruncă doar: ${r.ids.map(nm).join(', ')}. ` : '';
   // cine cât a câștigat / pierdut runda trecută
   const pay = b.payout;
   const payout = b.money && pay && r?.type === 'win' && r.id === pay.winner
     ? (pay.won > 0
-      ? `💸 ${nameOf(pay.winner)} câștigă ${leiText(pay.won)} (${Object.entries(pay.lost).map(([id, v]) => `${nameOf(id)} −${leiText(v)}`).join(', ')}). `
-      : `💸 ${nameOf(pay.winner)} își ia pariul înapoi (${leiText(pay.pot)}). `)
+      ? `${ic('coins')} ${nm(pay.winner)} câștigă ${leiText(pay.won)} (${Object.entries(pay.lost).map(([id, v]) => `${nm(id)} −${leiText(v)}`).join(', ')}). `
+      : `${ic('coins')} ${nm(pay.winner)} își ia pariul înapoi (${leiText(pay.pot)}). `)
     : '';
-  $('#info-small').textContent = payout + tie + (turn === self.id ? 'E rândul tău — apasă „Aruncă” sau atinge masa.' : `${nameOf(turn)} aruncă…`);
+  $('#info-small').innerHTML = payout + tie + (turn === self.id ? 'E rândul tău — apasă „Aruncă” sau atinge masa.' : `${nm(turn)} aruncă…`);
   const rolls = Object.keys(b.rolls).length ? b.rolls : b.lastRolls;
-  const bets = b.money ? Object.entries(b.bets).map(([id, v]) => `<span class="chip">💵 ${escapeHtml(nameOf(id))}: ${leiText(v)}</span>`) : [];
-  $('#picks').innerHTML = Object.entries(rolls).map(([id, [x, y]]) => `<span class="chip">${escapeHtml(nameOf(id))}: ${x} + ${y} = ${x + y}</span>`).join('') + bets.join('');
+  const bets = b.money ? Object.entries(b.bets).map(([id, v]) => `<span class="pill">${ic('money')}${nm(id)} <strong>${leiText(v)}</strong></span>`) : [];
+  $('#picks').innerHTML = Object.entries(rolls).map(([id, [x, y]]) => `<span class="pill">${nm(id)} ${x} + ${y} = <strong>${x + y}</strong></span>`).join('') + bets.join('');
   view.newGame = false;
-  $('#main-action').textContent = '🎲 Aruncă';
+  $('#main-action').innerHTML = label('dice-five', 'Aruncă');
   $('#main-action').hidden = turn !== self.id;
   // pariul se pune înainte să arunci
   const canBet = b.money && b.contenders.includes(self.id) && !(self.id in b.rolls);
   $('#bet-button').hidden = !canBet;
-  $('#bet-button').textContent = b.bets[self.id] ? `💵 Pariul tău: ${leiText(b.bets[self.id])} — mai pune` : '💵 Pune bani';
+  $('#bet-button').innerHTML = label('hand-coins', b.bets[self.id] ? `Pariul tău: ${leiText(b.bets[self.id])} · mai pune` : 'Pune bani');
   $('#money-button').classList.toggle('on', b.money);
   $('#rps-bot').hidden = true;
   $('#pawn-buttons').innerHTML = '';
@@ -398,9 +405,9 @@ function renderBarbut(state, self) {
 $('#money-button').addEventListener('click', () => {
   const b = room.state.barbut;
   room.dispatch({ type: 'money', on: !b.money });
-  toast(b.money ? 'Pariurile sunt oprite.' : '💸 Barbut pe bani: fiecare pune bancnota înainte să arunce.');
+  toast(b.money ? 'Pariurile sunt oprite.' : 'Barbut pe bani: fiecare pune bancnota înainte să arunce.');
 });
-$('#bet-notes').innerHTML = NOTES.map(v => `<button data-note="${v}">${leiText(v)}</button>`).join('');
+$('#bet-notes').innerHTML = NOTES.map(v => `<button class="btn" data-note="${v}">${leiText(v)}</button>`).join('');
 $('#bet-panel').querySelector('#bet-hint').insertAdjacentHTML('beforebegin', '<p class="muted">Pariul tău: <b id="bet-total">0 lei</b></p>');
 
 let bet = null; // { stream, timer, canvas, seen }
@@ -470,7 +477,7 @@ async function scanNote() {
   if (value !== null && bet.streak >= 1) {
     bet.seen = value;
     $('#bet-seen').textContent = `Văd: ${leiText(value)}`;
-    $('#bet-confirm').textContent = `✅ Pun ${leiText(value)}`;
+    $('#bet-confirm').innerHTML = label('check', `Pun ${leiText(value)}`);
     $('#bet-confirm').disabled = false;
   } else if (value === null) {
     bet.seen = null;
@@ -481,7 +488,7 @@ async function scanNote() {
 }
 function placeBet(value) {
   room.dispatch({ type: 'bet', amount: value });
-  toast(`💵 Ai pus ${leiText(value)}.`);
+  toast(`Ai pus ${leiText(value)}.`);
 }
 $('#bet-button').addEventListener('click', openBetSheet);
 $('#bet-done').addEventListener('click', closeBetSheet);
@@ -532,10 +539,10 @@ function renderLudo(state, self) {
   const current = ownerOf(color);
   let capture = '';
   if (L.last?.type === 'move' && L.last.captured.length) {
-    capture = `💥 Captură! Pionul lui ${L.last.captured.map(c => ownerOf(c.color)?.name ?? '').join(', ')} se întoarce la start. `;
+    capture = `Captură! Pionul lui ${L.last.captured.map(c => escapeHtml(ownerOf(c.color)?.name ?? '')).join(', ')} se întoarce la start. `;
   }
   if (L.phase === 'over') {
-    $('#info-big').textContent = `🏆 ${ownerOf(L.winner)?.name ?? ludo.COLOR_NAMES[L.winner]} a câștigat!`;
+    $('#info-big').innerHTML = `${ic('trophy')} ${escapeHtml(ownerOf(L.winner)?.name ?? ludo.COLOR_NAMES[L.winner])} a câștigat`;
     $('#info-small').textContent = room.isHost ? 'Din meniu poți porni o partidă nouă.' : 'Gazda poate porni o partidă nouă.';
   } else {
     $('#info-big').textContent = mine ? 'E rândul tău' : `${current?.name ?? ''} e la rând`;
@@ -544,9 +551,9 @@ function renderLudo(state, self) {
       : (mine ? `Ai dat ${L.die}. Alege pionul — atinge-l pe tablă sau mai jos.` : `${current?.name ?? ''} a dat ${L.die} și mută…`));
   }
   const moves = mine && L.phase === 'move' ? ludo.legalMoves(L, color, L.die) : [];
-  $('#pawn-buttons').innerHTML = moves.map(m => `<button data-pawn="${m.pawn}">Pionul ${m.pawn + 1}${m.from === ludo.YARD ? ' · iese' : m.to >= ludo.TRACK ? ' · la final' : ''}</button>`).join('');
+  $('#pawn-buttons').innerHTML = moves.map(m => `<button class="btn" data-pawn="${m.pawn}">Pionul ${m.pawn + 1}${m.from === ludo.YARD ? ' · iese' : m.to >= ludo.TRACK ? ' · la final' : ''}</button>`).join('');
   view.newGame = false;
-  $('#main-action').textContent = '🎲 Dă cu zarul';
+  $('#main-action').innerHTML = label('dice-five', 'Dă cu zarul');
   $('#main-action').hidden = !(mine && L.phase === 'roll');
   newGameButton(L.phase === 'over');
   $('#rps-bot').hidden = true;
@@ -572,17 +579,17 @@ function pickCell(raycaster) {
 
 function renderXO(state, self) {
   const s = state.xo;
-  const mark = id => (s.players[0] === id ? '❌' : s.players[1] === id ? '⭕' : '👀');
-  $('#scoreboard').innerHTML = state.players.map(p => `<span class="chip ${s.players[s.turn] === p.id && !s.winner ? 'turn' : ''}">${mark(p.id)} ${escapeHtml(p.name)}${p.id === room.selfId ? ' (tu)' : ''}</span>`).join('');
+  const mark = id => (s.players[0] === id ? `<span style="color:#f87171">${ic('x-bold')}</span>` : s.players[1] === id ? `<span style="color:#60a5fa">${ic('circle-bold')}</span>` : ic('eye'));
+  $('#scoreboard').innerHTML = state.players.map(p => `<span class="pill ${s.players[s.turn] === p.id && !s.winner ? 'turn' : ''}">${mark(p.id)}${escapeHtml(p.name)}${p.id === room.selfId ? ' (tu)' : ''}</span>`).join('');
   const mine = s.players[s.turn] === self.id;
   if (s.winner) {
-    $('#info-big').textContent = s.winner === 'draw' ? 'Remiză!' : `🏆 ${nameOf(s.winner)} a făcut linie!`;
+    $('#info-big').innerHTML = s.winner === 'draw' ? 'Remiză' : `${ic('trophy')} ${nm(s.winner)} a făcut linie`;
     $('#info-small').textContent = room.isHost ? '' : 'Gazda poate porni un joc nou.';
   } else if (!s.players.includes(self.id)) {
     $('#info-big').textContent = `${nameOf(s.players[s.turn])} e la rând`;
     $('#info-small').textContent = 'Joacă primii doi din cameră; tu te uiți.';
   } else {
-    $('#info-big').textContent = mine ? `E rândul tău ${mark(self.id)}` : `${nameOf(s.players[s.turn])} e la rând`;
+    $('#info-big').innerHTML = mine ? `E rândul tău ${mark(self.id)}` : `${nm(s.players[s.turn])} e la rând`;
     $('#info-small').textContent = mine ? 'Atinge o căsuță liberă de pe tablă.' : 'Trei în linie câștigă.';
   }
   $('#picks').innerHTML = '';
@@ -626,14 +633,14 @@ function renderJenga(state, self) {
   const j = state.jenga;
   const turn = jengaTurn(j);
   $('#scoreboard').innerHTML = j.order.map(id => playerById(state, id)).filter(Boolean)
-    .map(p => `<span class="chip ${p.id === turn && j.phase === 'pull' ? 'turn' : ''}">${dot(p.color)}${escapeHtml(p.name)}${p.id === room.selfId ? ' (tu)' : ''}${j.loser === p.id ? ' 💥' : ''}</span>`).join('');
+    .map(p => `<span class="pill ${p.id === turn && j.phase === 'pull' ? 'turn' : ''}">${dot(p.color)}${escapeHtml(p.name)}${p.id === room.selfId ? ' (tu)' : ''}${j.loser === p.id ? ` <span style="color:#f87171">${ic('warning-circle')}</span>` : ''}</span>`).join('');
   const mine = turn === self.id && j.phase === 'pull';
   const selected = view.jenga.selected;
   if (!mine && selected !== null) view.jenga.select(null);
   view.newGame = false;
   $('#main-action').hidden = true;
   if (j.phase === 'over') {
-    $('#info-big').textContent = `💥 Turnul a căzut!`;
+    $('#info-big').innerHTML = `${ic('warning-circle')} Turnul a căzut`;
     $('#info-small').textContent = `${nameOf(j.loser)} a pierdut după ${j.moves} ${j.moves === 1 ? 'tragere' : 'trageri'}.`;
     newGameButton(true);
   } else if (mine) {
@@ -641,7 +648,7 @@ function renderJenga(state, self) {
     if (selected !== null) {
       const o = jenga.outcome(j.slots, selected);
       $('#info-small').textContent = `Piesa aleasă — risc ${o.stable ? Math.round(o.risk * 100) : 100}%. Apasă „Trage piesa”.`;
-      $('#main-action').textContent = '✋ Trage piesa';
+      $('#main-action').innerHTML = label('hand-grabbing', 'Trage piesa');
       $('#main-action').hidden = false;
     } else {
       $('#info-small').textContent = 'Atinge o piesă din turn (nu din vârf). Trage cu degetul ca să rotești turnul.';
@@ -739,7 +746,7 @@ function renderRps(state, self) {
   $('#main-action').hidden = true;
   $('#pawn-buttons').innerHTML = '';
   if (solo()) return renderLocalIdle(v);
-  $('#scoreboard').innerHTML = state.players.map(p => scoreChip(p, s.scores[p.id] ?? 0, false, s.phase === 'waiting' && (s.ready[p.id] || p.bot) ? ' ✋' : '')).join('');
+  $('#scoreboard').innerHTML = state.players.map(p => scoreChip(p, s.scores[p.id] ?? 0, false, s.phase === 'waiting' && (s.ready[p.id] || p.bot) ? ic('hand-palm') : '')).join('');
   if (s.phase === 'waiting') {
     const ready = state.players.filter(p => s.ready[p.id] || p.bot).length;
     $('#info-big').textContent = 'Arătați mâna!';
@@ -750,11 +757,11 @@ function renderRps(state, self) {
     $('#picks').innerHTML = '';
   } else if (s.phase === 'reveal') {
     const r = s.result;
-    $('#info-big').textContent = r.type === 'win' ? `🏆 ${r.winners.map(nameOf).join(' și ')} câștigă!` : 'Egalitate!';
+    $('#info-big').innerHTML = r.type === 'win' ? `${ic('trophy')} ${r.winners.map(nm).join(' și ')} câștigă` : 'Egalitate';
     $('#info-small').textContent = r.type === 'win' ? `${ARTICLE[r.gesture]} câștigă runda.` : 'Nimeni nu câștigă runda asta.';
     $('#picks').innerHTML = state.players.map(p => {
       const g = s.picks[p.id];
-      return `<span class="chip ${r.winners.includes(p.id) ? 'win' : ''}">${escapeHtml(p.name)}: ${g ? `${EMOJI[g]} ${g}` : '🤷 nimic'}</span>`;
+      return `<span class="pill ${r.winners.includes(p.id) ? 'win' : ''}">${escapeHtml(p.name)}: ${g ? `${ic(GESTURE_ICON[g])}${g}` : `${ic('question')}nimic`}</span>`;
     }).join('');
   }
 }
@@ -805,24 +812,24 @@ function finishLocalRound(v, hands) {
   if (L.mode === 'duo') {
     const [left, right] = hands.length >= 2 ? hands.map(h => h.gesture) : [];
     if (!left || !right) {
-      $('#info-big').textContent = '🤷';
+      $('#info-big').innerHTML = ic('question');
       $('#info-small').textContent = 'Nu am recunoscut ambele gesturi. Încă o dată!';
     } else {
       const w = left === right ? 0 : BEATS[left] === right ? -1 : 1;
       if (w < 0) score[0] += 1; else if (w > 0) score[1] += 1;
-      $('#info-big').textContent = `${EMOJI[left]} vs ${EMOJI[right]}`;
+      $('#info-big').innerHTML = `${ic(GESTURE_ICON[left])} vs ${ic(GESTURE_ICON[right])}`;
       $('#info-small').textContent = w < 0 ? 'Stânga câștigă!' : w > 0 ? 'Dreapta câștigă!' : 'Egalitate';
     }
   } else {
     const mine = myGesture(v);
     if (!mine) {
-      $('#info-big').textContent = '🤷';
+      $('#info-big').innerHTML = ic('question');
       $('#info-small').textContent = 'Nu am recunoscut gestul. Ține mâna întreagă în cadru și încă o dată!';
     } else {
       const cpu = GESTURE_LIST[Math.floor(Math.random() * 3)];
       const w = mine === cpu ? 0 : BEATS[mine] === cpu ? -1 : 1;
       if (w < 0) score[0] += 1; else if (w > 0) score[1] += 1;
-      $('#info-big').textContent = `${EMOJI[mine]} vs ${EMOJI[cpu]}`;
+      $('#info-big').innerHTML = `${ic(GESTURE_ICON[mine])} vs ${ic(GESTURE_ICON[cpu])}`;
       $('#info-small').textContent = `Calculatorul: ${cpu}. ` + (w < 0 ? 'Ai câștigat!' : w > 0 ? 'Calculatorul câștigă.' : 'Egalitate.');
     }
   }
@@ -833,8 +840,8 @@ function finishLocalRound(v, hands) {
 function renderLocalScore(v) {
   const L = v.local;
   $('#scoreboard').innerHTML = L.mode === 'duo'
-    ? `<span class="chip">Stânga · ${L.scores.duo[0]}</span><span class="chip">Dreapta · ${L.scores.duo[1]}</span>`
-    : `<span class="chip">Tu · ${L.scores.cpu[0]}</span><span class="chip">Calculator · ${L.scores.cpu[1]}</span>`;
+    ? `<span class="pill">Stânga <strong>${L.scores.duo[0]}</strong></span><span class="pill">Dreapta <strong>${L.scores.duo[1]}</strong></span>`
+    : `<span class="pill">Tu <strong>${L.scores.cpu[0]}</strong></span><span class="pill">${ic('robot')}Calculator <strong>${L.scores.cpu[1]}</strong></span>`;
 }
 function renderLocalIdle(v) {
   renderLocalScore(v);

@@ -155,10 +155,10 @@ function startScreen({ root, content, world, status, setState, onTap }) {
   renderer.domElement.className = 'stage-layer';
   root.append(renderer.domElement);
   const { scene, anchor, reticle } = world;
-  scene.background = new THREE.Color(0x0b1018);
+  scene.background = new THREE.Color(0x0b0c0f);
   reticle.visible = false;
-  // o masă cu postav verde, ca să aibă zarurile unde cădea
-  const felt = new THREE.Mesh(new THREE.CircleGeometry(0.42, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1f5a3a, roughness: 0.95 }));
+  // o suprafață grafit, ca să aibă zarurile și tabla pe ce sta
+  const felt = new THREE.Mesh(new THREE.CircleGeometry(3, 96).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x23272f, roughness: 0.95 }));
   felt.receiveShadow = true;
   felt.position.y = -0.0005;
   anchor.add(felt);
@@ -176,6 +176,9 @@ function startScreen({ root, content, world, status, setState, onTap }) {
     camera.lookAt(0, 0, 0.01);
   }
   faceCamera(content, camera.position);
+  // suprafața se pierde în fundal, fără margine vizibilă — ceața începe abia după joc
+  const d = camera.position.length();
+  scene.fog = new THREE.Fog(0x0b0c0f, d * 1.3, d * 3.2);
 
   // tras orizontal = rotești masa
   let drag = null;
