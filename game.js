@@ -9,7 +9,9 @@ export const COLORS = ludo.COLORS;
 export const MAX_PLAYERS = 4;
 export const GESTURES = ['Piatră', 'Hârtie', 'Foarfecă'];
 const BEATS = { 'Piatră': 'Foarfecă', 'Foarfecă': 'Hârtie', 'Hârtie': 'Piatră' };
-export const RPS_COUNTDOWN_MS = 2200; // „Piatră… Hârtie… Foarfecă!” pe fiecare telefon
+export const RPS_COUNTDOWN_MS = 2200;
+// bancnotele românești în circulație (lei)
+export const NOTES = [1, 5, 10, 20, 50, 100, 200, 500]; // „Piatră… Hârtie… Foarfecă!” pe fiecare telefon
 
 export function newRoom(host) {
   return { seq: 0, hostId: host.id, players: [{ id: host.id, name: host.name, color: COLORS[0], bot: false }], game: null, barbut: null, rps: null, ludo: null, xo: null, jenga: null, roll: null };
@@ -74,6 +76,17 @@ function apply(r, a, from) {
     case 'move':
       if (r.game !== 'ludo' || !me || !ludo.move(r.ludo, me.color, a.pawn)) return false;
       return;
+    case 'money':
+      if (!isHost || r.game !== 'barbut') return false;
+      r.barbut.money = !!a.on;
+      if (!a.on) r.barbut.bets = {};
+      return;
+    case 'bet':
+      return r.game === 'barbut' && me ? barbutBet(r, me, a.amount) : false;
+    case 'bet-clear':
+      if (r.game !== 'barbut' || !me || !(me.id in r.barbut.bets) || me.id in r.barbut.rolls) return false;
+      delete r.barbut.bets[me.id];
+      return;
     case 'place':
       return r.game === 'xo' && me ? xoPlace(r, me, a.cell) : false;
     case 'pull':
@@ -113,7 +126,7 @@ function startGame(r, game) {
   const ids = r.players.map(p => p.id);
   const zero = () => Object.fromEntries(ids.map(id => [id, 0]));
   if (game === 'barbut') {
-    r.barbut = { order: ids, contenders: [...ids], rolls: {}, lastRolls: {}, scores: zero(), round: 1, result: null };
+    r.barbut = { order: ids, contenders: [...ids], rolls: {}, lastRolls: {}, scores: zero(), round: 1, result: null, money: r.barbut?.money ?? false, bets: {}, balance: zero(), payout: null };
   } else if (game === 'rps') {
     r.rps = { phase: 'waiting', round: 0, ready: {}, picks: {}, scores: zero(), result: null };
   } else if (game === 'ludo') {
@@ -136,6 +149,7 @@ function addToGames(r, id) {
   if (r.game === 'barbut') {
     r.barbut.order.push(id);
     r.barbut.scores[id] = 0;
+    r.barbut.balance[id] = 0;
   } else if (r.game === 'rps') {
     r.rps.scores[id] = 0;
   }
@@ -150,6 +164,8 @@ function removePlayer(r, id) {
     b.contenders = b.contenders.filter(x => x !== id);
     delete b.rolls[id];
     delete b.scores[id];
+    delete b.balance[id];
+    delete b.bets[id];
     if (b.contenders.length && b.contenders.every(x => x in b.rolls)) resolveBarbut(r);
     if (!b.contenders.length) b.contenders = [...b.order];
   }
@@ -242,14 +258,34 @@ function resolveBarbut(r) {
   b.lastRolls = { ...b.rolls };
   b.rolls = {};
   if (top.length > 1) {
+    // la egalitate potul rămâne pe masă pentru aruncarea de departajare
     b.result = { type: 'tie', ids: top, sum: best };
     b.contenders = top;
   } else {
-    b.scores[top[0]] += 1;
-    b.result = { type: 'win', id: top[0], sum: best };
+    const winner = top[0];
+    b.scores[winner] += 1;
+    b.result = { type: 'win', id: winner, sum: best };
     b.contenders = [...b.order];
     b.round += 1;
+    // pariuri: câștigătorul ia tot potul
+    const pot = Object.values(b.bets).reduce((sum, v) => sum + v, 0);
+    if (pot > 0) {
+      const lost = Object.fromEntries(Object.entries(b.bets).filter(([id]) => id !== winner));
+      for (const [id, amount] of Object.entries(lost)) b.balance[id] = (b.balance[id] ?? 0) - amount;
+      b.balance[winner] = (b.balance[winner] ?? 0) + pot - (b.bets[winner] ?? 0);
+      b.payout = { winner, pot, won: pot - (b.bets[winner] ?? 0), lost };
+    } else {
+      b.payout = null;
+    }
+    b.bets = {};
   }
+}
+
+// un pariu se pune cu bancnote, înainte să arunci (se adună dacă pui mai multe)
+function barbutBet(r, me, amount) {
+  const b = r.barbut;
+  if (!b.money || !NOTES.includes(amount) || !b.contenders.includes(me.id) || me.id in b.rolls) return false;
+  b.bets[me.id] = (b.bets[me.id] ?? 0) + amount;
 }
 
 // ---------------------------------------------------------------- Nu te supăra, frate
@@ -305,9 +341,15 @@ export function hostTimers(room, now, memo, rand = Math.random) {
   // botul așteaptă puțin la fiecare stare nouă, ca să se vadă ce face
   if (memo.botSeq !== room.seq) { delete memo.bot; memo.botSeq = room.seq; }
   if (room.game === 'barbut') {
-    const turn = barbutTurn(room.barbut);
+    const b = room.barbut;
+    const turn = barbutTurn(b);
     const bot = room.players.find(p => p.id === turn && p.bot);
-    if (since('bot', !!bot) > 1200) out.push({ action: { type: 'roll', values: [die(), die()] }, from: bot.id });
+    if (since('bot', !!bot) > 1200) {
+      // pe bani, calculatorul pune și el o bancnotă înainte să arunce
+      out.push(b.money && !(bot.id in b.bets)
+        ? { action: { type: 'bet', amount: [5, 10, 20, 50][Math.floor(rand() * 4)] }, from: bot.id }
+        : { action: { type: 'roll', values: [die(), die()] }, from: bot.id });
+    }
   }
   if (room.game === 'xo' && !room.xo.winner) {
     const s = room.xo;

@@ -239,3 +239,57 @@ test('Jenga cu calculatorul: el trage singur prin ceasul gazdei', () => {
   assert.equal(r.jenga.moves, 2);
   assert.equal(r.jenga.last.by, r.players[1].id);
 });
+
+test('barbut pe bani: pariezi cu bancnote, câștigătorul ia potul, soldurile se țin minte', () => {
+  let r = reduce(room(), { type: 'select', game: 'barbut' }, 'h');
+  assert.equal(reduce(r, { type: 'bet', amount: 10 }, 'h'), r, 'modul pe bani e oprit');
+  assert.equal(reduce(r, { type: 'money', on: true }, 'a'), r, 'doar gazda îl pornește');
+  r = reduce(r, { type: 'money', on: true }, 'h');
+  assert.equal(reduce(r, { type: 'bet', amount: 7 }, 'h'), r, 'nu există bancnotă de 7 lei');
+  r = reduce(r, { type: 'bet', amount: 10 }, 'h');
+  r = reduce(r, { type: 'bet', amount: 5 }, 'h');
+  r = reduce(r, { type: 'bet', amount: 50 }, 'a');
+  assert.deepEqual(r.barbut.bets, { h: 15, a: 50 });
+  r = reduce(r, { type: 'roll', values: [6, 6] }, 'h');
+  assert.equal(reduce(r, { type: 'bet', amount: 100 }, 'h'), r, 'după ce ai aruncat nu mai pui');
+  r = reduce(r, { type: 'roll', values: [1, 2] }, 'a');
+  assert.deepEqual(r.barbut.payout, { winner: 'h', pot: 65, won: 50, lost: { a: 50 } });
+  assert.deepEqual(r.barbut.balance, { h: 50, a: -50 });
+  assert.deepEqual(r.barbut.bets, {});
+});
+
+test('barbut pe bani: la egalitate potul rămâne pentru departajare', () => {
+  let r = reduce(room(), { type: 'join', name: 'Bob' }, 'b');
+  r = reduce(r, { type: 'select', game: 'barbut' }, 'h');
+  r = reduce(r, { type: 'money', on: true }, 'h');
+  for (const id of ['h', 'a', 'b']) r = reduce(r, { type: 'bet', amount: 10 }, id);
+  r = reduce(r, { type: 'roll', values: [5, 5] }, 'h');
+  r = reduce(r, { type: 'roll', values: [1, 1] }, 'a');
+  r = reduce(r, { type: 'roll', values: [4, 6] }, 'b');
+  assert.equal(r.barbut.result.type, 'tie');
+  assert.deepEqual(r.barbut.bets, { h: 10, a: 10, b: 10 }, 'potul e tot acolo');
+  r = reduce(r, { type: 'bet', amount: 20 }, 'b'); // poate mări pariul înainte de departajare
+  r = reduce(r, { type: 'roll', values: [2, 2] }, 'h');
+  r = reduce(r, { type: 'roll', values: [3, 3] }, 'b');
+  assert.deepEqual(r.barbut.payout, { winner: 'b', pot: 50, won: 20, lost: { h: 10, a: 10 } });
+  assert.deepEqual(r.barbut.balance, { h: -10, a: -10, b: 20 });
+});
+
+test('barbut pe bani cu calculatorul: el pune o bancnotă, apoi aruncă', () => {
+  let r = newRoom({ id: 'h', name: 'Denis' });
+  r = reduce(r, { type: 'add-bot' }, 'h');
+  r = reduce(r, { type: 'select', game: 'barbut' }, 'h');
+  r = reduce(r, { type: 'money', on: true }, 'h');
+  r = reduce(r, { type: 'bet', amount: 10 }, 'h');
+  r = reduce(r, { type: 'roll', values: [1, 1] }, 'h');
+  const bot = r.players[1].id;
+  const memo = {};
+  let now = 0;
+  for (let i = 0; i < 6 && !r.barbut.result; i++) {
+    now += 1500;
+    hostTimers(r, now - 1400, memo, () => 0.3);
+    for (const { action, from } of hostTimers(r, now, memo, () => 0.3)) r = reduce(r, action, from);
+  }
+  assert.equal(r.barbut.result.id, bot, 'calculatorul dă mai mult de 2');
+  assert.deepEqual(r.barbut.payout, { winner: bot, pot: 20, won: 10, lost: { h: 10 } });
+});

@@ -2,7 +2,8 @@
 // Starea jocului vine mereu de la gazdă (net.js + game.js); aici doar o arătăm și trimitem acțiuni.
 import * as THREE from 'three';
 import { hostRoom, joinRoom } from './net.js';
-import { COLORS, RPS_COUNTDOWN_MS, barbutTurn, jengaTurn, playerById } from './game.js';
+import { COLORS, NOTES, RPS_COUNTDOWN_MS, barbutTurn, jengaTurn, playerById } from './game.js';
+import * as banknotes from './banknotes.js';
 import * as ludo from './ludo.js';
 import { createDice } from './dice.js';
 import { createBoard, SEAT, SIZE as BOARD_SIZE } from './board.js';
@@ -18,6 +19,8 @@ const storage = {
   get: key => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* mod privat */ } },
 };
+// „1 leu”, „5 lei”
+const leiText = v => (Math.abs(v) === 1 ? `${v} leu` : `${v} lei`);
 const d6 = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 6);
 const EMOJI = { 'Piatră': '✊', 'Hârtie': '✋', 'Foarfecă': '✌️' };
 const GAME_TITLES = { barbut: 'Barbut', rps: 'Piatră–Hârtie–Foarfecă', ludo: 'Nu te supăra, frate', xo: 'X și 0', jenga: 'Jenga' };
@@ -176,6 +179,8 @@ function enterGameView(game) {
   $('#game-title').textContent = GAME_TITLES[game];
   $('#view-button').hidden = game === 'rps';
   $('#flip-camera').hidden = game !== 'rps';
+  $('#money-button').hidden = game !== 'barbut' || !room.isHost;
+  $('#bet-button').hidden = true;
   $('#sheet').hidden = true;
   $('#pawn-buttons').innerHTML = '';
   $('#picks').innerHTML = '';
@@ -192,6 +197,7 @@ function leaveGameView() {
   v.stopHands?.();
   clearTimeout(v.countdownTimer);
   stopRpsCamera();
+  closeBetSheet();
   $('#stage-root').replaceChildren();
 }
 
@@ -358,19 +364,142 @@ function scoreChip(player, score, isTurn, extra = '') {
 function renderBarbut(state, self) {
   const b = state.barbut;
   const turn = barbutTurn(b);
-  $('#scoreboard').innerHTML = state.players.map(p => scoreChip(p, b.scores[p.id] ?? 0, p.id === turn)).join('');
+  const lei = v => `${v > 0 ? '+' : ''}${leiText(v)}`;
+  $('#scoreboard').innerHTML = state.players.map(p => scoreChip(p, b.scores[p.id] ?? 0, p.id === turn, b.money ? ` · ${lei(b.balance[p.id] ?? 0)}` : '')).join('');
   const r = b.result;
   $('#info-big').textContent = r ? (r.type === 'win' ? `🏆 ${nameOf(r.id)} ia runda cu ${r.sum}!` : `Egalitate la ${r.sum}!`) : `Runda ${b.round}`;
   const tie = r?.type === 'tie' ? `Mai aruncă doar: ${r.ids.map(nameOf).join(', ')}. ` : '';
-  $('#info-small').textContent = tie + (turn === self.id ? 'E rândul tău — apasă „Aruncă” sau atinge masa.' : `${nameOf(turn)} aruncă…`);
+  // cine cât a câștigat / pierdut runda trecută
+  const pay = b.payout;
+  const payout = b.money && pay && r?.type === 'win' && r.id === pay.winner
+    ? (pay.won > 0
+      ? `💸 ${nameOf(pay.winner)} câștigă ${leiText(pay.won)} (${Object.entries(pay.lost).map(([id, v]) => `${nameOf(id)} −${leiText(v)}`).join(', ')}). `
+      : `💸 ${nameOf(pay.winner)} își ia pariul înapoi (${leiText(pay.pot)}). `)
+    : '';
+  $('#info-small').textContent = payout + tie + (turn === self.id ? 'E rândul tău — apasă „Aruncă” sau atinge masa.' : `${nameOf(turn)} aruncă…`);
   const rolls = Object.keys(b.rolls).length ? b.rolls : b.lastRolls;
-  $('#picks').innerHTML = Object.entries(rolls).map(([id, [x, y]]) => `<span class="chip">${escapeHtml(nameOf(id))}: ${x} + ${y} = ${x + y}</span>`).join('');
+  const bets = b.money ? Object.entries(b.bets).map(([id, v]) => `<span class="chip">💵 ${escapeHtml(nameOf(id))}: ${leiText(v)}</span>`) : [];
+  $('#picks').innerHTML = Object.entries(rolls).map(([id, [x, y]]) => `<span class="chip">${escapeHtml(nameOf(id))}: ${x} + ${y} = ${x + y}</span>`).join('') + bets.join('');
   view.newGame = false;
   $('#main-action').textContent = '🎲 Aruncă';
   $('#main-action').hidden = turn !== self.id;
+  // pariul se pune înainte să arunci
+  const canBet = b.money && b.contenders.includes(self.id) && !(self.id in b.rolls);
+  $('#bet-button').hidden = !canBet;
+  $('#bet-button').textContent = b.bets[self.id] ? `💵 Pariul tău: ${leiText(b.bets[self.id])} — mai pune` : '💵 Pune bani';
+  $('#money-button').classList.toggle('on', b.money);
   $('#rps-bot').hidden = true;
   $('#pawn-buttons').innerHTML = '';
+  if (!$('#bet-sheet').hidden) $('#bet-total').textContent = leiText(b.bets[self.id] ?? 0);
 }
+
+// ---------------------------------------------------------------- pariuri cu bancnote (barbut)
+
+$('#money-button').addEventListener('click', () => {
+  const b = room.state.barbut;
+  room.dispatch({ type: 'money', on: !b.money });
+  toast(b.money ? 'Pariurile sunt oprite.' : '💸 Barbut pe bani: fiecare pune bancnota înainte să arunce.');
+});
+$('#bet-notes').innerHTML = NOTES.map(v => `<button data-note="${v}">${leiText(v)}</button>`).join('');
+$('#bet-panel').querySelector('#bet-hint').insertAdjacentHTML('beforebegin', '<p class="muted">Pariul tău: <b id="bet-total">0 lei</b></p>');
+
+let bet = null; // { stream, timer, canvas, seen }
+async function openBetSheet() {
+  if (bet) return;
+  // pe iPhone nu pot merge două camere deodată: AR-ul trece pe ecran cât pui banii
+  if (view?.mode && view.mode !== 'screen') { toast('AR-ul trece pe ecran cât pui banii.'); await openMode('screen'); }
+  bet = { canvas: document.createElement('canvas'), seen: null, streak: 0 };
+  $('#bet-sheet').hidden = false;
+  $('#bet-seen').textContent = 'Încarc recunoașterea bancnotelor…';
+  banknotes.preload().catch(error => console.warn(error));
+  $('#bet-total').textContent = leiText(room.state.barbut.bets[room.selfId] ?? 0);
+  const video = $('#bet-video');
+  try {
+    if (testVideo) { video.src = testVideo; video.loop = true; } else {
+      bet.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+      video.srcObject = bet.stream;
+    }
+    await video.play();
+  } catch (error) {
+    $('#bet-seen').textContent = 'Nu merge camera — alege valoarea de jos.';
+    return;
+  }
+  const tick = async () => {
+    if (!bet) return;
+    try { await scanNote(); } catch (error) { console.warn(error); }
+    if (bet) bet.timer = setTimeout(tick, 350);
+  };
+  tick();
+}
+function closeBetSheet() {
+  if (!bet) return;
+  clearTimeout(bet.timer);
+  bet.stream?.getTracks().forEach(t => t.stop());
+  const video = $('#bet-video');
+  video.srcObject = null;
+  video.removeAttribute('src');
+  bet = null;
+  $('#bet-sheet').hidden = true;
+}
+// ce e în chenar, decupat din video (care e afișat „cover”)
+function cropGuide() {
+  const video = $('#bet-video'), guide = $('#bet-guide');
+  if (!video.videoWidth) return null;
+  const area = $('#bet-view').getBoundingClientRect(), g = guide.getBoundingClientRect();
+  const scale = Math.max(area.width / video.videoWidth, area.height / video.videoHeight);
+  const offX = (area.width - video.videoWidth * scale) / 2, offY = (area.height - video.videoHeight * scale) / 2;
+  // luăm și puțin din jurul chenarului (15%): rețeaua recunoaște mai sigur o bancnotă „pe masă” decât una decupată la milimetru
+  const pad = 0.15;
+  const sw = g.width / scale * (1 + 2 * pad), sh = g.height / scale * (1 + 2 * pad);
+  const sx = (g.left - area.left - offX) / scale - g.width / scale * pad, sy = (g.top - area.top - offY) / scale - g.height / scale * pad;
+  const c = bet.canvas;
+  c.width = 320;
+  c.height = 160;
+  c.getContext('2d', { willReadFrequently: true }).drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+async function scanNote() {
+  const canvas = cropGuide();
+  if (!canvas) return;
+  const found = await banknotes.recognize(canvas);
+  if (!bet) return;
+  // cerem aceeași valoare de două ori la rând, ca să nu sară eticheta
+  const value = found?.value ?? null;
+  bet.streak = value !== null && value === bet.last ? bet.streak + 1 : 0;
+  bet.last = value;
+  if (value !== null && bet.streak >= 1) {
+    bet.seen = value;
+    $('#bet-seen').textContent = `Văd: ${leiText(value)}`;
+    $('#bet-confirm').textContent = `✅ Pun ${leiText(value)}`;
+    $('#bet-confirm').disabled = false;
+  } else if (value === null) {
+    bet.seen = null;
+    $('#bet-seen').textContent = 'Pune bancnota în chenar';
+    $('#bet-confirm').textContent = 'Caut bancnota…';
+    $('#bet-confirm').disabled = true;
+  }
+}
+function placeBet(value) {
+  room.dispatch({ type: 'bet', amount: value });
+  toast(`💵 Ai pus ${leiText(value)}.`);
+}
+$('#bet-button').addEventListener('click', openBetSheet);
+$('#bet-done').addEventListener('click', closeBetSheet);
+$('#bet-clear').addEventListener('click', () => { room.dispatch({ type: 'bet-clear' }); toast('Pariul a fost anulat.'); });
+$('#bet-confirm').addEventListener('click', () => { if (bet?.seen) placeBet(bet.seen); });
+$('#bet-notes').addEventListener('click', async event => {
+  const value = Number(event.target.closest('[data-note]')?.dataset.note);
+  if (!value) return;
+  if ($('#bet-teach').checked) {
+    const canvas = bet && cropGuide();
+    if (!canvas) return toast('Pornește camera întâi.');
+    toast('Învăț bancnota…');
+    await banknotes.teach(canvas, value);
+    toast(`Am învățat ${leiText(value)} (${banknotes.learned().filter(r => r.value === value).length} exemple).`);
+  } else {
+    placeBet(value);
+  }
+});
 
 // ---------------------------------------------------------------- Nu te supăra, frate
 

@@ -3,7 +3,8 @@
 Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), singur sau cu prietenii:
 
 - **Barbut**: două zaruri 3D cu fizică reală; pe rând, cea mai mare sumă ia runda (la egalitate aruncă din nou doar cei la egalitate).
-- **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din cameră (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru. Singur pe telefon: doi jucători, câte o mână.
+  - **💸 Pe bani** (bonus, îl pornește gazda): fiecare își pune bancnota în fața camerei înainte să arunce; aplicația recunoaște bancnota (1–500 lei), câștigătorul rundei ia potul și se ține soldul fiecăruia.
+- **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din cameră (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru. Singur pe telefon: o mână = tu contra calculatorului, două mâini = doi jucători.
 - **Nu te supăra, frate**: 2–4 jucători, fiecare cu culoarea aleasă, tabla 3D pe masă.
 - **Jenga**: turn de 54 de piese pe masă; pe rând tragi o piesă, ea urcă sus; cine dărâmă turnul pierde. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
 - **X și 0**: clasic, 3×3, tabla pe masă.
@@ -31,9 +32,16 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 | `xo.js`, `xo-view.js` | regulile și calculatorul / tabla 3×3 |
 | `ar.js` | scena: ecran / WebXR (Android) / AlvaAR SLAM + giroscop (iPhone) / marker ArUco (js-aruco2) |
 | `hands.js` | recunoașterea mâinilor și a gestului |
+| `banknotes.js`, `banknote-refs.json` | recunoașterea bancnotelor: rețea neuronală (MediaPipe Image Embedder) + cel mai apropiat vecin |
 | `app.js`, `index.html` | interfața |
 
 Biblioteci (din CDN): three.js, cannon-es, PeerJS, MediaPipe Tasks Vision, [AlvaAR](https://github.com/alanross/AlvaAR) (GPL-3.0), js-aruco2.
+
+### Recunoașterea bancnotelor
+
+Imaginea din chenar trece printr-o rețea neuronală (MobileNet v3 din MediaPipe Image Embedder) care o transformă într-o „amprentă” de 1024 de numere; o comparăm (cosinus) cu amprentele bancnotelor cunoscute și alegem cea mai apropiată. Amprentele din `banknote-refs.json` sunt calculate din scanările bancnotelor românești de pe Wikimedia Commons (domeniu public), față și verso, câte 4 variante (normal, mai întunecat, întors, ușor mărit). În aplicație poți adăuga și amprentele bancnotelor tale („Învăț bancnota”).
+
+Măsurat: 10/10 pe fotografii reale (5, 10, 50, 100 lei — pe masă, din teanc) și 111/112 pe scanări cu perspectivă, lumină slabă/caldă, blur, fundal de lemn și decupaj. Ce nu e bancnotă (mâini, masa goală) iese cu scor 0.08–0.12 față de 0.6–0.85 la bancnote, de aici pragul de 0.4. Doar după culoare nu merge (1/10 pe fotografii reale).
 
 ## Teste
 
