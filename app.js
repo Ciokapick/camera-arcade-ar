@@ -46,6 +46,8 @@ const dot = color => `<span class="dot" style="background:${ludo.COLOR_HEX[color
 // iconițe Phosphor prin Iconify
 const ic = name => `<iconify-icon icon="ph:${name}"></iconify-icon>`;
 const label = (icon, text) => `${ic(icon)}<span>${text}</span>`;
+// pentru ce se redesenează la fiecare cadru al camerei: rescriem doar dacă s-a schimbat, altfel iconițele nu apucă să apară
+const setHtml = (selector, html) => { const el = $(selector); if (el.innerHTML !== html) el.innerHTML = html; };
 const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 // ---------------------------------------------------------------- nume
@@ -204,6 +206,7 @@ function leaveGameView() {
   v.stopHands?.();
   clearTimeout(v.countdownTimer);
   stopRpsCamera();
+  showBeat(null);
   $('#rps-view').classList.remove('show');
   closeBetSheet();
   $('#stage-root').replaceChildren();
@@ -739,6 +742,37 @@ $('#flip-camera').addEventListener('click', async () => {
 $('#rps-bot').addEventListener('click', () => room.dispatch({ type: 'add-bot' }));
 const ARTICLE = { 'Piatră': 'Piatra', 'Hârtie': 'Hârtia', 'Foarfecă': 'Foarfeca' };
 
+// Numărătoarea: 3… 2… 1… Acum! — câte o bătaie la 0,9 s, cu bip și vibrație, ca să arătați gestul pe ritm.
+// Gestul se citește puțin după „Acum!” (GRACE_MS), cât ajunge mâna în poziție.
+const BEAT_MS = RPS_COUNTDOWN_MS / 3, GRACE_MS = 350;
+let audio = null;
+// pe iPhone sunetul pornește doar după o atingere, așa că îl deblocăm la prima atingere din aplicație
+addEventListener('pointerdown', () => {
+  try { audio ??= new AudioContext(); audio.resume(); } catch { /* fără sunet */ }
+}, { capture: true });
+function beep(go) {
+  navigator.vibrate?.(go ? 120 : 40);
+  if (audio?.state !== 'running') return;
+  const osc = audio.createOscillator(), gain = audio.createGain(), t = audio.currentTime;
+  osc.frequency.value = go ? 1320 : 880;
+  gain.gain.setValueAtTime(0.25, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + (go ? 0.3 : 0.12));
+  osc.connect(gain).connect(audio.destination);
+  osc.start(t);
+  osc.stop(t + 0.3);
+}
+// beat: 0, 1, 2 → „3”, „2”, „1”; 3 → „Acum!”; null → ascunde
+function showBeat(beat) {
+  const el = $('#rps-count');
+  el.classList.remove('pop', 'go');
+  if (beat === null) { el.textContent = ''; return; }
+  el.textContent = beat < 3 ? String(3 - beat) : 'Acum!';
+  void el.offsetWidth; // repornește animația
+  el.classList.add('pop');
+  el.classList.toggle('go', beat === 3);
+  beep(beat === 3);
+}
+
 const solo = () => room.state.players.length === 1;
 
 function onHands(v, hands) {
@@ -765,7 +799,7 @@ function renderRps(state, self) {
   $('#main-action').hidden = true;
   $('#pawn-buttons').innerHTML = '';
   if (solo()) return renderLocalIdle(v);
-  $('#scoreboard').innerHTML = state.players.map(p => scoreChip(p, s.scores[p.id] ?? 0, false, s.phase === 'waiting' && (s.ready[p.id] || p.bot) ? ic('hand-palm') : '')).join('');
+  setHtml('#scoreboard', state.players.map(p => scoreChip(p, s.scores[p.id] ?? 0, false, s.phase === 'waiting' && (s.ready[p.id] || p.bot) ? ic('hand-palm') : '')).join(''));
   if (s.phase === 'waiting') {
     const ready = state.players.filter(p => s.ready[p.id] || p.bot).length;
     $('#info-big').textContent = 'Arătați mâna!';
@@ -787,15 +821,16 @@ function renderRps(state, self) {
 
 function runCountdown(v, round) {
   v.countdownRound = round;
-  const words = ['Piatră…', 'Hârtie…', 'Foarfecă!'];
-  const step = RPS_COUNTDOWN_MS / words.length;
-  words.forEach((word, i) => setTimeout(() => {
-    if (view === v && room.state.rps?.round === round) { $('#info-big').textContent = word; $('#info-small').textContent = ''; }
-  }, i * step));
+  $('#info-big').textContent = '';
+  $('#info-small').textContent = 'Arată gestul pe „Acum!”';
+  for (let beat = 0; beat <= 3; beat++) {
+    setTimeout(() => { if (view === v && room.state.rps?.round === round) showBeat(beat); }, beat * BEAT_MS);
+  }
   v.countdownTimer = setTimeout(() => {
     if (view !== v) return;
+    showBeat(null);
     room.dispatch({ type: 'pick', round, gesture: myGesture(v) });
-  }, RPS_COUNTDOWN_MS);
+  }, RPS_COUNTDOWN_MS + GRACE_MS);
 }
 
 // Singur pe telefon: o mână = tu contra calculatorului; două mâini = doi jucători (stânga vs dreapta).
@@ -812,13 +847,15 @@ function localRound(v, hands) {
       L.phase = 'countdown';
       L.mode = count === 2 ? 'duo' : 'cpu';
       L.started = now;
+      L.beat = -1;
     }
   }
   if (L.phase === 'countdown') {
-    const words = ['Piatră…', 'Hârtie…', 'Foarfecă!'];
-    $('#info-big').textContent = words[Math.min(2, Math.floor((now - L.started) / (RPS_COUNTDOWN_MS / 3)))];
-    $('#info-small').textContent = L.mode === 'duo' ? 'Doi jucători: stânga contra dreapta' : 'Tu contra calculatorului';
-    if (now - L.started > RPS_COUNTDOWN_MS + 250) finishLocalRound(v, hands);
+    const beat = Math.min(3, Math.floor((now - L.started) / BEAT_MS));
+    if (beat !== L.beat) { L.beat = beat; showBeat(beat); }
+    $('#info-big').textContent = '';
+    $('#info-small').textContent = (L.mode === 'duo' ? 'Stânga contra dreapta' : 'Tu contra calculatorului') + ' · arată gestul pe „Acum!”';
+    if (now - L.started > RPS_COUNTDOWN_MS + GRACE_MS) { showBeat(null); finishLocalRound(v, hands); }
   } else if (L.phase === 'cooldown' && now - L.started > 2500) {
     L.phase = 'idle';
     L.count = -1;
@@ -858,9 +895,10 @@ function finishLocalRound(v, hands) {
 }
 function renderLocalScore(v) {
   const L = v.local;
-  $('#scoreboard').innerHTML = L.mode === 'duo'
+  const html = L.mode === 'duo'
     ? `<span class="pill">Stânga <strong>${L.scores.duo[0]}</strong></span><span class="pill">Dreapta <strong>${L.scores.duo[1]}</strong></span>`
     : `<span class="pill">Tu <strong>${L.scores.cpu[0]}</strong></span><span class="pill">${ic('robot')}Calculator <strong>${L.scores.cpu[1]}</strong></span>`;
+  setHtml('#scoreboard', html);
 }
 function renderLocalIdle(v) {
   renderLocalScore(v);

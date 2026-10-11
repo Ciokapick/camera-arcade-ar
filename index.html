@@ -45,6 +45,11 @@
     .stage-layer, #rps-video, #rps-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .stage-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
     #rps-view.mirror #rps-video, #rps-view.mirror #rps-canvas { transform: scaleX(-1); }
+    #rps-count { position: absolute; left: 50%; top: 24%; width: 128px; height: 128px; margin-left: -64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 15; pointer-events: none; font-size: 72px; font-weight: 800; letter-spacing: -.03em; color: #fff; background: rgba(11, 12, 15, .62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+    #rps-count:empty { display: none; }
+    #rps-count.go { font-size: 32px; color: #0b0c0f; background: var(--accent); }
+    #rps-count.pop { animation: beat .9s ease-out forwards; }
+    @keyframes beat { 0% { transform: scale(1.35); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 75% { opacity: 1; } 100% { transform: scale(.94); opacity: .15; } }
     #rps-start { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 20; width: auto; padding: 0 28px; white-space: nowrap; }
 
     /* interfața stă deasupra; zonele goale lasă atingerile să treacă la scenă */
@@ -208,6 +213,7 @@
   <div id="rps-view">
     <video id="rps-video" autoplay muted playsinline></video>
     <canvas id="rps-canvas"></canvas>
+    <div id="rps-count"></div>
     <button class="btn primary big" id="rps-start" hidden><iconify-icon icon="ph:camera"></iconify-icon>Pornește camera</button>
   </div>
 

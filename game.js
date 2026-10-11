@@ -9,9 +9,9 @@ export const COLORS = ludo.COLORS;
 export const MAX_PLAYERS = 4;
 export const GESTURES = ['Piatră', 'Hârtie', 'Foarfecă'];
 const BEATS = { 'Piatră': 'Foarfecă', 'Foarfecă': 'Hârtie', 'Hârtie': 'Piatră' };
-export const RPS_COUNTDOWN_MS = 2200;
+export const RPS_COUNTDOWN_MS = 2700; // 3… 2… 1… (câte 0,9 s), apoi „Acum!”
 // bancnotele românești în circulație (lei)
-export const NOTES = [1, 5, 10, 20, 50, 100, 200, 500]; // „Piatră… Hârtie… Foarfecă!” pe fiecare telefon
+export const NOTES = [1, 5, 10, 20, 50, 100, 200, 500];
 
 export function newRoom(host) {
   return { seq: 0, hostId: host.id, players: [{ id: host.id, name: host.name, color: COLORS[0], bot: false }], game: null, barbut: null, rps: null, ludo: null, xo: null, jenga: null, roll: null };
