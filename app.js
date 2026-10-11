@@ -204,6 +204,7 @@ function leaveGameView() {
   v.stopHands?.();
   clearTimeout(v.countdownTimer);
   stopRpsCamera();
+  $('#rps-view').classList.remove('show');
   closeBetSheet();
   $('#stage-root').replaceChildren();
 }
@@ -397,7 +398,8 @@ function renderBarbut(state, self) {
   $('#money-button').classList.toggle('on', b.money);
   $('#rps-bot').hidden = true;
   $('#pawn-buttons').innerHTML = '';
-  if (!$('#bet-sheet').hidden) $('#bet-total').textContent = leiText(b.bets[self.id] ?? 0);
+  $('#bet-total').textContent = leiText(b.bets[self.id] ?? 0);
+  $('#bet-clear').hidden = !b.bets[self.id];
 }
 
 // ---------------------------------------------------------------- pariuri cu bancnote (barbut)
@@ -419,7 +421,6 @@ async function openBetSheet() {
   $('#bet-sheet').hidden = false;
   $('#bet-seen').textContent = 'Încarc recunoașterea bancnotelor…';
   banknotes.preload().catch(error => console.warn(error));
-  $('#bet-total').textContent = leiText(room.state.barbut.bets[room.selfId] ?? 0);
   const video = $('#bet-video');
   try {
     if (testVideo) { video.src = testVideo; video.loop = true; } else {
@@ -492,7 +493,11 @@ function placeBet(value) {
 }
 $('#bet-button').addEventListener('click', openBetSheet);
 $('#bet-done').addEventListener('click', closeBetSheet);
-$('#bet-clear').addEventListener('click', () => { room.dispatch({ type: 'bet-clear' }); toast('Pariul a fost anulat.'); });
+$('#bet-clear').addEventListener('click', () => {
+  closeBetSheet();
+  room.dispatch({ type: 'bet-clear' });
+  toast('Pariul a fost anulat.');
+});
 $('#bet-confirm').addEventListener('click', () => { if (bet?.seen) placeBet(bet.seen); });
 $('#bet-notes').addEventListener('click', async event => {
   const value = Number(event.target.closest('[data-note]')?.dataset.note);
@@ -675,15 +680,29 @@ async function startRpsCamera() {
   } else {
     video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: rpsFacing }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
   }
-  await video.play();
+  await playOrAsk(video);
   $('#rps-view').classList.toggle('mirror', rpsFacing === 'user' && !testVideo);
 }
+// Camera pornește singură când intri în joc, nu dintr-o atingere; iPhone-ul (mai ales în Low Power Mode)
+// refuză atunci să redea video-ul — îi cerem o atingere.
+async function playOrAsk(video) {
+  try {
+    await video.play();
+  } catch (error) {
+    if (error.name !== 'NotAllowedError') throw error;
+    const button = $('#rps-start');
+    button.hidden = false;
+    await new Promise((resolve, reject) => {
+      button.onclick = () => { button.hidden = true; video.play().then(resolve, reject); };
+    });
+  }
+}
 function stopRpsCamera() {
+  $('#rps-start').hidden = true;
   const video = $('#rps-video');
   video.srcObject?.getTracks().forEach(track => track.stop());
   video.srcObject = null;
   video.removeAttribute('src');
-  $('#rps-view').classList.remove('show');
 }
 
 async function startRpsView(v) {

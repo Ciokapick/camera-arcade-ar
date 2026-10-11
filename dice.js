@@ -11,6 +11,8 @@ const FACE_VALUES = [3, 4, 1, 6, 2, 5];
 const AXES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].map(a => new THREE.Vector3(...a));
 const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
 const STEP = 1 / 120;
+// la scară reală un zar de 3,5 cm se oprește în ~0,6 s — prea repede ca să-l urmărești; îl redăm cu încetinitorul
+const PLAYBACK_SPEED = 0.55;
 const UP = new THREE.Vector3(0, 1, 0);
 
 let materials;
@@ -105,14 +107,14 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     const side = new THREE.Vector3(-forward.z, 0, forward.x);
     const reach = bounds ? Math.min(bounds * 0.6, 0.06) : 0.06;
     const bodies = meshes.map((mesh, i) => {
-      const body = new CANNON.Body({ mass: 0.02, material: diceMaterial, shape: new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 2)), sleepSpeedLimit: 0.05, sleepTimeLimit: 0.3 });
+      const body = new CANNON.Body({ mass: 0.02, material: diceMaterial, shape: new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 2)), sleepSpeedLimit: 0.05, sleepTimeLimit: 0.3, linearDamping: 0.1, angularDamping: 0.35 });
       const offset = (i - (count - 1) / 2) * size * 1.6;
       const start = forward.clone().multiplyScalar(-reach).addScaledVector(side, offset);
-      body.position.set(start.x, floor + 0.08 + size * 2, start.z);
+      body.position.set(start.x, floor + 0.1 + size * 2, start.z);
       body.quaternion.setFromEuler(rand() * 6.3, rand() * 6.3, rand() * 6.3);
       const speed = 0.15 + rand() * 0.15;
       body.velocity.set(forward.x * speed + (rand() - 0.5) * 0.05, 0.2, forward.z * speed + (rand() - 0.5) * 0.05);
-      body.angularVelocity.set((rand() - 0.5) * 40, (rand() - 0.5) * 40, (rand() - 0.5) * 40);
+      body.angularVelocity.set((rand() - 0.5) * 24, (rand() - 0.5) * 24, (rand() - 0.5) * 24);
       world.addBody(body);
       return body;
     });
@@ -140,7 +142,7 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     // avansează animația; întoarce valorile o singură dată, când zarurile s-au oprit
     update(dt) {
       if (!playback || playback.done) return null;
-      playback.t += dt;
+      playback.t += dt * PLAYBACK_SPEED;
       const index = Math.min(playback.frames.length - 1, Math.floor(playback.t * 60));
       const q = new THREE.Quaternion();
       playback.frames[index].forEach((f, i) => {
