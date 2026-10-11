@@ -132,20 +132,44 @@ export async function openStage({ root, overlay, mode, content, status, setState
   return stage;
 }
 
-function tapHandler(root, camera, content, world, onTap, isReady) {
+// Atingeri pe scenă: o atingere scurtă = pick/onTap. Dacă `content.drag` acceptă atingerea (ex.: o piesă de Jenga),
+// mișcarea degetului merge la drag.move până la ridicare. `canDrag` trebuie să fie fără efecte (isReady poate pune masa).
+function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isReady) {
   const raycaster = new THREE.Raycaster();
-  let down = null;
-  const onDown = event => { down = { x: event.clientX, y: event.clientY }; };
+  const ray = event => raycaster.setFromCamera(ndcFromEvent(event, root), camera);
+  let down = null, dragging = false;
+  const onDown = event => {
+    down = { x: event.clientX, y: event.clientY };
+    if (event.target.closest('button, input, a, .panel') || !content.drag || !canDrag(event)) return;
+    ray(event);
+    dragging = content.drag.start(raycaster);
+  };
+  const onMove = event => {
+    if (!dragging) return;
+    ray(event);
+    content.drag.move(raycaster);
+  };
   const onUp = event => {
+    if (dragging) { dragging = false; content.drag.end(); return; }
     if (event.target.closest('button, input, a, .panel')) return;
     if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 12) return; // a fost tras, nu atins
     if (!isReady(event)) return;
-    raycaster.setFromCamera(ndcFromEvent(event, root), camera);
+    ray(event);
     if (!content.pick?.(raycaster)) onTap();
   };
+  const onCancel = () => { if (dragging) { dragging = false; content.drag.end(); } };
   root.addEventListener('pointerdown', onDown);
+  root.addEventListener('pointermove', onMove);
   root.addEventListener('pointerup', onUp);
-  return () => { root.removeEventListener('pointerdown', onDown); root.removeEventListener('pointerup', onUp); };
+  root.addEventListener('pointercancel', onCancel);
+  const off = () => {
+    root.removeEventListener('pointerdown', onDown);
+    root.removeEventListener('pointermove', onMove);
+    root.removeEventListener('pointerup', onUp);
+    root.removeEventListener('pointercancel', onCancel);
+  };
+  off.dragging = () => dragging;
+  return off;
 }
 
 // ---------------------------------------------------------------- screen: fără AR
@@ -183,7 +207,8 @@ function startScreen({ root, content, world, status, setState, onTap }) {
   // tras orizontal = rotești masa
   let drag = null;
   const onDown = e => { drag = { x: e.clientX, yaw: anchor.rotation.y }; };
-  const onMove = e => { if (drag && e.buttons) anchor.rotation.y = drag.yaw + (e.clientX - drag.x) * 0.01; };
+  // (nu și când tragi de o piesă)
+  const onMove = e => { if (drag && e.buttons && !offTap.dragging()) anchor.rotation.y = drag.yaw + (e.clientX - drag.x) * 0.01; };
   root.addEventListener('pointerdown', onDown);
   root.addEventListener('pointermove', onMove);
   const offTap = tapHandler(root, camera, content, world, onTap, () => true);
@@ -383,7 +408,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       return false;
     }
     return true;
-  });
+  }, () => state === 'placed');
 
   function loop(time) {
     raf = requestAnimationFrame(loop);

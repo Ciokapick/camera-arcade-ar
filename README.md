@@ -6,7 +6,7 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
   - **Pe bani** (bonus, îl pornește gazda): fiecare își pune bancnota în fața camerei înainte să arunce; aplicația recunoaște bancnota (1–500 lei), câștigătorul rundei ia potul și se ține soldul fiecăruia.
 - **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din cameră (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru, cu numărătoare 3–2–1 (bip și vibrație), iar gestul se arată pe „Acum!”. Singur pe telefon: o mână = tu contra calculatorului, două mâini = doi jucători.
 - **Nu te supăra, frate**: 2–4 jucători, fiecare cu culoarea aleasă, tabla 3D pe masă.
-- **Jenga**: turn de 54 de piese pe masă; pe rând tragi o piesă, ea urcă sus; cine dărâmă turnul pierde. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
+- **Jenga**: turn de 54 de piese pe masă; pe rând prinzi o piesă cu degetul și o tragi afară, apoi ea urcă sus; cine dărâmă turnul pierde. Dacă tragi prea repede, turnul se clatină și riscul crește. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
 - **X și 0**: clasic, 3×3, tabla pe masă.
 
 ## Cum se joacă

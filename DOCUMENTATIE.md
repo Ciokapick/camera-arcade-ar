@@ -185,6 +185,7 @@ Soluția din `jenga.js`:
 
 - Pentru fiecare nivel se verifică dacă **centrul de greutate** al pieselor de deasupra cade pe piesele rămase pe nivelul acela. Dacă nu, turnul cade.
 - Peste asta vine un **risc** mic: 1% plus 5% pentru fiecare nivel rămas cu o singură piesă, ca să existe tensiune.
+- **Tras cu degetul** (`app.js` → `grabBlock`/`dragBlock`): piesa se mișcă după deget doar pe axa ei. Viteza maximă contează: peste ~12 cm/s turnul se clatină, iar „norocul” trimis la gazdă e micșorat proporțional, deci smucitul crește șansa să cadă.
 - Fizica (cannon-es) e folosită **doar pentru imagine**, după ce s-a decis că turnul cade, ca prăbușirea să arate real.
 
 Lecția: nu tot ce pare „fizică” trebuie simulat. Uneori o regulă simplă e mai corectă și mai rapidă.

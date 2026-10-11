@@ -187,7 +187,6 @@ function enterGameView(game) {
   view = { game, mode: 'screen', animatedSeq: room.state.roll?.seq ?? 0, appliedLudoSeq: -1 };
   $('#game-title').textContent = GAME_TITLES[game];
   $('#view-button').hidden = game === 'rps';
-  $('#flip-camera').hidden = game !== 'rps';
   $('#money-button').hidden = game !== 'barbut' || !room.isHost;
   $('#bet-button').hidden = true;
   $('#sheet').hidden = true;
@@ -262,7 +261,12 @@ function startStageView(v) {
   } else if (v.game === 'jenga') {
     const tower = createJenga();
     v.jenga = tower;
-    v.content = { group: tower.group, footprint: tower.footprint, screen: tower.screen, get busy() { return tower.busy; }, pick: raycaster => pickBlock(raycaster), update: dt => { if (tower.update(dt)) settled(); } };
+    v.content = {
+      group: tower.group, footprint: tower.footprint, screen: tower.screen, get busy() { return tower.busy; },
+      pick: raycaster => pickBlock(raycaster),
+      drag: { start: grabBlock, move: dragBlock, end: dropBlock },
+      update: dt => { if (tower.update(dt)) settled(); },
+    };
   } else {
     const board = createBoard();
     v.board = board;
@@ -660,6 +664,47 @@ function pullSelected() {
   room.dispatch({ type: 'pull', block, dir, luck: Math.random() });
 }
 
+// Tras cu degetul: prinzi piesa și o scoți încet pe axa ei. Peste SAFE_SPEED turnul se clatină,
+// iar la final „norocul” se micșorează proporțional (luck < risc = turnul cade), deci smucitul crește riscul.
+const SAFE_SPEED = 0.12; // m/s — piesa (7,5 cm) scoasă în ~0,5 s
+let pulling = null; // { block, t, offset, speed, maxSpeed }
+function grabBlock(raycaster) {
+  const state = room?.state, self = me(), j = state?.jenga;
+  if (!j || j.phase !== 'pull' || jengaTurn(j) !== self?.id || view.content.busy) return false;
+  const block = view.jenga.pick(raycaster);
+  if (block === null || !jenga.pullable(j.slots, block)) return false; // atingerea normală spune de ce nu
+  view.jenga.select(block);
+  view.jenga.grab(block, raycaster);
+  pulling = { block, t: performance.now(), offset: 0, maxSpeed: 0 };
+  renderJenga(state, self);
+  return true;
+}
+function dragBlock(raycaster) {
+  if (!pulling) return;
+  const offset = view.jenga.drag(raycaster), now = performance.now(), dt = (now - pulling.t) / 1000;
+  if (dt < 0.04) return;
+  const speed = Math.abs(offset - pulling.offset) / dt;
+  Object.assign(pulling, { offset, t: now, maxSpeed: Math.max(pulling.maxSpeed, speed) });
+  view.jenga.shake(speed / SAFE_SPEED - 1);
+  $('#info-small').textContent = speed > SAFE_SPEED ? 'Prea repede — turnul se clatină!' : 'Încet… încet…';
+  if (Math.abs(offset) >= jenga.L * 0.55) {
+    const { block, maxSpeed } = pulling;
+    pulling = null;
+    view.jenga.select(null);
+    const steady = Math.max(0.35, Math.min(1, SAFE_SPEED / Math.max(maxSpeed, 1e-6)));
+    room.dispatch({ type: 'pull', block, dir: Math.sign(offset), luck: Math.random() * steady });
+  }
+}
+function dropBlock() {
+  if (!pulling) return;
+  const moved = Math.abs(pulling.offset) > 0.003;
+  pulling = null;
+  view.jenga.release();
+  // doar atinsă (n-ai tras): rămâne aleasă, cu butonul „Trage piesa”; trasă pe jumătate: se întoarce la loc
+  if (moved) view.jenga.select(null);
+  renderJenga(room.state, me());
+}
+
 function renderJenga(state, self) {
   const j = state.jenga;
   const turn = jengaTurn(j);
@@ -678,11 +723,11 @@ function renderJenga(state, self) {
     $('#info-big').textContent = 'E rândul tău';
     if (selected !== null) {
       const o = jenga.outcome(j.slots, selected);
-      $('#info-small').textContent = `Piesa aleasă — risc ${o.stable ? Math.round(o.risk * 100) : 100}%. Apasă „Trage piesa”.`;
+      $('#info-small').textContent = pulling ? 'Încet… încet…' : `Risc ${o.stable ? Math.round(o.risk * 100) : 100}%. Trage piesa afară cu degetul, încet — sau apasă butonul.`;
       $('#main-action').innerHTML = label('hand-grabbing', 'Trage piesa');
       $('#main-action').hidden = false;
     } else {
-      $('#info-small').textContent = 'Atinge o piesă din turn (nu din vârf). Trage cu degetul ca să rotești turnul.';
+      $('#info-small').textContent = 'Prinde o piesă cu degetul (nu din vârf) și trage-o încet afară. Tras pe lângă turn îl rotește.';
     }
   } else {
     $('#info-big').textContent = `${nameOf(turn)} e la rând`;
@@ -695,7 +740,6 @@ function renderJenga(state, self) {
 
 // ---------------------------------------------------------------- piatră-hârtie-foarfecă
 
-let rpsFacing = 'user';
 async function startRpsCamera() {
   stopRpsCamera();
   const video = $('#rps-video');
@@ -704,10 +748,9 @@ async function startRpsCamera() {
     video.src = testVideo;
     video.loop = true;
   } else {
-    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: rpsFacing }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
   }
   await playOrAsk(video);
-  $('#rps-view').classList.toggle('mirror', rpsFacing === 'user' && !testVideo);
 }
 // Camera pornește singură când intri în joc, nu dintr-o atingere; iPhone-ul (mai ales în Low Power Mode)
 // refuză atunci să redea video-ul — îi cerem o atingere.
@@ -744,7 +787,7 @@ async function startRpsView(v) {
     const stop = await trackHands({
       video: $('#rps-video'),
       canvas: $('#rps-canvas'),
-      mirrored: () => $('#rps-view').classList.contains('mirror'),
+      mirrored: () => false, // mereu camera din spate, fără oglindire
       onHands: hands => onHands(v, hands),
       onStatus: status,
     });
@@ -758,10 +801,6 @@ async function startRpsView(v) {
     status('Nu merge camera sau recunoașterea: ' + (error.message || error));
   }
 }
-$('#flip-camera').addEventListener('click', async () => {
-  rpsFacing = rpsFacing === 'user' ? 'environment' : 'user';
-  try { await startRpsCamera(); } catch (error) { toast(error.message); }
-});
 $('#rps-bot').addEventListener('click', () => room.dispatch({ type: 'add-bot' }));
 const ARTICLE = { 'Piatră': 'Piatra', 'Hârtie': 'Hârtia', 'Foarfecă': 'Foarfeca' };
 
