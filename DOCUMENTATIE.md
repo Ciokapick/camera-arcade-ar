@@ -1,6 +1,6 @@
 # Cum e făcut Camera Arcade AR
 
-Ghid pentru cine vrea să înțeleagă codul fără să fie programator „de meserie”. Citește-l de sus în jos o dată, apoi folosește-l ca hartă când deschizi fișierele.
+Ghid pentru programatorul care a construit asta cu AI („vibe coding”) și vrea să știe ce face fiecare bucată și de ce e făcută așa. Citește-l de sus în jos o dată, apoi folosește-l ca hartă când deschizi fișierele.
 
 > Pe scurt: e o **pagină web** (fără server propriu, fără build). Telefonul descarcă câteva fișiere JavaScript, pornește camera, desenează lucruri 3D peste imaginea camerei și vorbește direct cu telefoanele prietenilor.
 
