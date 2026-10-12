@@ -1,6 +1,7 @@
 // Tabla 3D „Nu te supăra, frate”: grilă 11×11, traseu de 40 de căsuțe, pioni animați pas cu pas.
 // Totul în metri, centrul tablei în origine, fața tablei la y = TOP.
 import * as THREE from 'three';
+import { sound } from './sound.js';
 import { COLORS, YARD, TRACK, square, COLOR_HEX as HEX } from './ludo.js';
 import { createDice } from './dice.js';
 
@@ -183,7 +184,7 @@ export function createBoard() {
             const k = Math.min(1, pawn.hop);
             pawn.mesh.position.lerpVectors(pawn.from, target, k);
             pawn.mesh.position.y = TOP + Math.sin(k * Math.PI) * (pawn.from.distanceTo(target) > CELL * 1.5 ? 0.04 : 0.012);
-            if (k >= 1) { pawn.path.shift(); pawn.hop = 0; pawn.from = null; }
+            if (k >= 1) { pawn.path.shift(); pawn.hop = 0; pawn.from = null; sound.tick(); }
           }
           pawn.ring.position.set(pawn.mesh.position.x, TOP + 0.0006, pawn.mesh.position.z);
           if (pawn.ring.visible && !target) pawn.mesh.position.y = TOP + 0.004 + Math.sin(time * 6) * 0.003;

@@ -305,3 +305,11 @@ test('zaruri: calculatorul așteaptă să se oprească zarurile celui dinainte',
   const [roll] = hostTimers(r, 3500, memo);
   assert.equal(roll.action.type, 'roll');
 });
+
+test('zaruri: aruncarea cu degetul ajunge la toți, curățată', () => {
+  let r = reduce(room(), { type: 'select', game: 'barbut' }, 'h');
+  r = reduce(r, { type: 'roll', values: [3, 4], fling: { x: 3, z: -4, power: 7 } }, 'h');
+  assert.deepEqual(r.roll.fling, { x: 0.6, z: -0.8, power: 1 });
+  r = reduce(r, { type: 'roll', values: [1, 2], fling: { x: 'a' } }, 'a');
+  assert.equal(r.roll.fling, null);
+});

@@ -74,7 +74,7 @@ function apply(r, a, from) {
       return;
     case 'roll':
       if (!me) return false;
-      return r.game === 'barbut' ? barbutRoll(r, me, a.values) : r.game === 'ludo' ? ludoRoll(r, me, a.values) : false;
+      return r.game === 'barbut' ? barbutRoll(r, me, a.values, a.fling) : r.game === 'ludo' ? ludoRoll(r, me, a.values) : false;
     case 'move':
       if (r.game !== 'ludo' || !me || !ludo.move(r.ludo, me.color, a.pawn)) return false;
       return;
@@ -244,11 +244,19 @@ function validDice(values, count) {
   return Array.isArray(values) && values.length === count && values.every(v => Number.isInteger(v) && v >= 1 && v <= 6);
 }
 
-function barbutRoll(r, me, values) {
+// fling: cum a aruncat (direcția pe masă x/z și puterea 0..1), ca toți să vadă aceeași aruncare
+function cleanFling(f) {
+  const x = Number(f?.x), z = Number(f?.z), power = Number(f?.power);
+  if (![x, z, power].every(Number.isFinite) || Math.hypot(x, z) < 1e-6) return null;
+  const n = Math.hypot(x, z);
+  return { x: x / n, z: z / n, power: Math.max(0, Math.min(1, power)) };
+}
+
+function barbutRoll(r, me, values, fling) {
   const b = r.barbut;
   if (barbutTurn(b) !== me.id || !validDice(values, 2)) return false;
   b.rolls[me.id] = values;
-  r.roll = { by: me.id, values, seq: r.seq + 1 };
+  r.roll = { by: me.id, values, seq: r.seq + 1, fling: cleanFling(fling) };
   if (b.contenders.every(id => id in b.rolls)) resolveBarbut(r);
 }
 

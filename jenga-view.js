@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as CANNON from 'cannon-es';
 import { L, W, H, slotPose, axisOf, collapse } from './jenga.js';
+import { sound } from './sound.js';
 
 function woodTexture(seed) {
   const canvas = document.createElement('canvas');
@@ -27,6 +28,9 @@ function woodTexture(seed) {
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
+
+// turnul cade: o ploaie de piese de lemn
+const rumble = () => { for (let i = 0; i < 9; i++) setTimeout(() => sound.wood(0.4 + Math.random() * 0.6), 80 + Math.random() * 1100); };
 
 const poseToMesh = (mesh, p) => {
   mesh.position.set(p[0], p[1], p[2]);
@@ -82,13 +86,14 @@ export function createJenga() {
         const offset = held?.i === block ? held.offset : 0;
         held = null;
         anim = { t: 0, i: block, start: slotPose(from.level, from.slot), axis: axisOf(from.level), dir, offset, end: restPose(block), fell, slotsAfter: j.slots };
+        sound.wood(0.5);
         return;
       }
       lastSeq = j.last?.seq ?? null;
       if (anim) return;
       if (j.phase === 'over') {
         // turnul căzut rămâne căzut (dacă intri în cameră după cădere, îl vezi căzând)
-        if (!fallen) { fallen = true; anim = { t: 0, frames: collapse(CANNON, j.slots, j.moves + 1) }; }
+        if (!fallen) { fallen = true; anim = { t: 0, frames: collapse(CANNON, j.slots, j.moves + 1) }; rumble(); }
         return;
       }
       fallen = false;
@@ -170,9 +175,11 @@ export function createJenga() {
         // a ajuns sus — și turnul cade
         fallen = true;
         anim = { t: 0, frames: collapse(CANNON, anim.slotsAfter, lastSeq) };
+        rumble();
       } else {
         snap();
         anim = null;
+        sound.wood();
         return true;
       }
       return false;

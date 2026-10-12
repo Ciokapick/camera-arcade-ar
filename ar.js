@@ -142,15 +142,17 @@ function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isRe
     down = { x: event.clientX, y: event.clientY };
     if (event.target.closest('button, input, a, .panel') || !content.drag || !canDrag(event)) return;
     ray(event);
-    dragging = content.drag.start(raycaster);
+    dragging = content.drag.start(raycaster, event);
+    // degetul poate ieși de pe scenă (peste butoane, în afara ecranului) — ridicarea tot ajunge aici
+    if (dragging) root.setPointerCapture?.(event.pointerId);
   };
   const onMove = event => {
     if (!dragging) return;
     ray(event);
-    content.drag.move(raycaster);
+    content.drag.move(raycaster, event);
   };
   const onUp = event => {
-    if (dragging) { dragging = false; content.drag.end(); return; }
+    if (dragging) { dragging = false; content.drag.end(event); return; }
     if (event.target.closest('button, input, a, .panel')) return;
     if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 12) return; // a fost tras, nu atins
     if (!isReady(event)) return;

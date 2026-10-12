@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as CANNON from 'cannon-es';
+import { sound } from './sound.js';
 
 // Ordinea materialelor la BoxGeometry: +X, -X, +Y, -Y, +Z, -Z. Fețele opuse însumează 7.
 const FACE_VALUES = [3, 4, 1, 6, 2, 5];
@@ -83,7 +84,8 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
 
   let playback = null; // { frames, fix, t, values, done }
 
-  function simulate(seed, from) {
+  // power 0..1: cât de tare ai aruncat (degetul / scuturatul); 0.5 = aruncare obișnuită
+  function simulate(seed, from, power = 0.5) {
     const rand = seededRandom(seed);
     const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0), allowSleep: true });
     const diceMaterial = new CANNON.Material(), tableMaterial = new CANNON.Material();
@@ -106,37 +108,45 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     forward.normalize().negate();
     const side = new THREE.Vector3(-forward.z, 0, forward.x);
     const reach = bounds ? Math.min(bounds * 0.6, 0.06) : 0.06;
+    const impacts = [];
+    let step = 0;
     const bodies = meshes.map((mesh, i) => {
       const body = new CANNON.Body({ mass: 0.02, material: diceMaterial, shape: new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 2)), sleepSpeedLimit: 0.05, sleepTimeLimit: 0.3, linearDamping: 0.1, angularDamping: 0.35 });
       const offset = (i - (count - 1) / 2) * size * 1.6;
       const start = forward.clone().multiplyScalar(-reach).addScaledVector(side, offset);
       body.position.set(start.x, floor + 0.1 + size * 2, start.z);
       body.quaternion.setFromEuler(rand() * 6.3, rand() * 6.3, rand() * 6.3);
-      const speed = 0.15 + rand() * 0.15;
+      const speed = (0.15 + rand() * 0.15) * (0.5 + power);
       body.velocity.set(forward.x * speed + (rand() - 0.5) * 0.05, 0.2, forward.z * speed + (rand() - 0.5) * 0.05);
-      body.angularVelocity.set((rand() - 0.5) * 24, (rand() - 0.5) * 24, (rand() - 0.5) * 24);
+      const spin = 24 * (0.6 + power * 0.8);
+      body.angularVelocity.set((rand() - 0.5) * spin, (rand() - 0.5) * spin, (rand() - 0.5) * spin);
+      // fiecare lovitură (de masă, de perete, de celălalt zar) → un clinchet la redare
+      body.addEventListener('collide', e => {
+        const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+        if (v > 0.05) impacts.push({ frame: Math.floor(step / 2), strength: v / 0.8 });
+      });
       world.addBody(body);
       return body;
     });
     // simulăm tot dinainte și înregistrăm la 60 fps
     const frames = [];
-    for (let step = 0; step < 5 / STEP; step++) {
+    for (step = 0; step < 5 / STEP; step++) {
       world.step(STEP);
       if (step % 2 === 0) frames.push(bodies.map(b => [b.position.x, b.position.y, b.position.z, b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w]));
       if (bodies.every(b => b.sleepState === CANNON.Body.SLEEPING)) break;
     }
-    return frames;
+    return { frames, impacts };
   }
 
   return {
     meshes,
     get busy() { return !!playback && !playback.done; },
     /** values: valorile cerute; seed: același pe toate telefoanele; from: direcția (locală) din care vin zarurile */
-    throw({ values, seed, from }) {
-      const frames = simulate(seed, from);
+    throw({ values, seed, from, power }) {
+      const { frames, impacts } = simulate(seed, from, power);
       const last = frames.at(-1);
       const fix = last.map((f, i) => relabel(topValue(new THREE.Quaternion(f[3], f[4], f[5], f[6])), values[i]));
-      playback = { frames, fix, t: 0, values, done: false };
+      playback = { frames, impacts, fix, t: 0, frame: -1, values, done: false };
       meshes.forEach(m => { m.visible = true; });
     },
     // avansează animația; întoarce valorile o singură dată, când zarurile s-au oprit
@@ -144,6 +154,8 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
       if (!playback || playback.done) return null;
       playback.t += dt * PLAYBACK_SPEED;
       const index = Math.min(playback.frames.length - 1, Math.floor(playback.t * 60));
+      for (const hit of playback.impacts) if (hit.frame > playback.frame && hit.frame <= index) sound.clack(hit.strength);
+      playback.frame = index;
       const q = new THREE.Quaternion();
       playback.frames[index].forEach((f, i) => {
         meshes[i].position.set(f[0], f[1], f[2]);

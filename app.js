@@ -12,6 +12,7 @@ import { createJenga } from './jenga-view.js';
 import * as jenga from './jenga.js';
 import { openStage, webXRSupported } from './ar.js';
 import { trackHands } from './hands.js';
+import { sound, vibrate, celebrate, lost } from './sound.js';
 
 const $ = selector => document.querySelector(selector);
 const testVideo = new URLSearchParams(location.search).get('test-video');
@@ -243,6 +244,14 @@ function newGameButton(over) {
   return true;
 }
 
+// câștig / pierdere: confetti sau sunet trist, o singură dată pentru fiecare rezultat (key)
+function outcome(key, won) {
+  if (!view || view.outcome === key) return;
+  view.outcome = key;
+  if (won === true) celebrate();
+  else if (won === false) lost();
+}
+
 function settled() {
   if (view?.pending && room?.state.game === view.game) renderGame(room.state, me());
 }
@@ -253,7 +262,7 @@ function startStageView(v) {
   if (v.game === 'barbut') {
     const group = new THREE.Group();
     const dice = createDice(group, { count: 2, size: 0.035 });
-    v.content = { group, dice, footprint: 0.16, get busy() { return dice.busy; }, update: dt => { if (dice.update(dt)) settled(); } };
+    v.content = { group, dice, footprint: 0.16, get busy() { return dice.busy; }, drag: { start: flickStart, move: flickMove, end: flickEnd }, update: dt => { if (dice.update(dt)) settled(); } };
   } else if (v.game === 'xo') {
     const cube = createXO();
     v.xo = cube;
@@ -349,12 +358,13 @@ function animateNewRoll(state) {
   const roller = playerById(state, roll.by);
   let from;
   if (state.game === 'ludo' && roller) from = SEAT[roller.color].clone(); // zarul vine dinspre locul celui care aruncă
+  else if (roll.fling) from = new THREE.Vector3(-roll.fling.x, 0, -roll.fling.z); // cum a aruncat, la fel pentru toți
   else if (roll.by === room.selfId && view.stage) from = view.stage.cameraLocal();
   else {
     const angle = (roll.seq * 2.399) % (Math.PI * 2);
     from = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
   }
-  view.content.dice.throw({ values: roll.values, seed: roll.seq * 7919 + 17, from });
+  view.content.dice.throw({ values: roll.values, seed: roll.seq * 7919 + 17, from, power: roll.fling?.power });
 }
 
 function mainAction() {
@@ -363,12 +373,69 @@ function mainAction() {
   if (view.newGame && room.isHost) { view.newGame = false; return room.dispatch({ type: 'select', game: state.game }); }
   if (state.game === 'jenga') return pullSelected();
   if (state.game === 'barbut' && barbutTurn(state.barbut) === self.id) {
-    room.dispatch({ type: 'roll', values: [d6(), d6()] });
+    throwDice();
   } else if (state.game === 'ludo' && state.ludo.phase === 'roll' && ludo.current(state.ludo) === self.color && !view.board.animating) {
     room.dispatch({ type: 'roll', values: [d6()] });
   }
 }
 $('#main-action').addEventListener('click', mainAction);
+// Zarurile aruncate „pe bune”: dai cu degetul peste masă în direcția în care vrei să meargă (cât de repede = cât de tare),
+// sau scuturi telefonul. Direcția și puterea pleacă la toți odată cu aruncarea (fling).
+const myDiceTurn = () => room?.state.game === 'barbut' && barbutTurn(room.state.barbut) === room.selfId && view?.content && !view.content.busy && $('#bet-sheet').hidden;
+function throwDice(fling) {
+  if (!myDiceTurn()) return;
+  room.dispatch({ type: 'roll', values: [d6(), d6()], fling });
+}
+const FLICK_MIN = 250; // px/s — mai încet nu e aruncare
+function tablePoint(raycaster) {
+  const g = view.content.group;
+  g.updateMatrixWorld(true);
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0).transformDirection(g.matrixWorld), g.getWorldPosition(new THREE.Vector3()));
+  const hit = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+  return hit && g.worldToLocal(hit);
+}
+let flick = null; // urma degetului: [{ x, y, t, p }]
+const flickSample = (raycaster, e) => ({ x: e.clientX, y: e.clientY, t: performance.now(), p: tablePoint(raycaster) });
+function flickStart(raycaster, e) {
+  if (!myDiceTurn()) return false;
+  flick = [flickSample(raycaster, e)];
+  return true;
+}
+function flickMove(raycaster, e) {
+  flick?.push(flickSample(raycaster, e));
+}
+function flickEnd() {
+  if (!flick) return;
+  const samples = flick;
+  flick = null;
+  const last = samples.at(-1), first = samples.find(s => last.t - s.t < 150) ?? samples[0];
+  if (Math.hypot(last.x - samples[0].x, last.y - samples[0].y) < 12) return throwDice(); // doar atingere
+  const speed = Math.hypot(last.x - first.x, last.y - first.y) / Math.max((last.t - first.t) / 1000, 0.016);
+  if (speed < FLICK_MIN) return toast('Dă mai repede cu degetul, ca și cum ai arunca.');
+  const power = Math.max(0.25, Math.min(1, 0.25 + (speed - FLICK_MIN) / 2500));
+  const dir = first.p && last.p ? last.p.clone().sub(first.p) : null;
+  throwDice(dir && Math.hypot(dir.x, dir.z) > 1e-4 ? { x: dir.x, z: dir.z, power } : null);
+}
+
+// scuturat: accelerație (fără gravitație) peste ~14 m/s²; iPhone cere voie, o dată, dintr-o atingere
+let lastShake = 0, shakeOn = false;
+function onMotion(e) {
+  const a = e.acceleration?.x != null ? e.acceleration : null, g = e.accelerationIncludingGravity;
+  const force = a ? Math.hypot(a.x, a.y, a.z) : g?.x != null ? Math.abs(Math.hypot(g.x, g.y, g.z) - 9.81) : 0;
+  if (force < 14 || performance.now() - lastShake < 1500 || !myDiceTurn()) return;
+  lastShake = performance.now();
+  const from = view.stage?.cameraLocal() ?? new THREE.Vector3(0, 0, 1); // zarurile pleacă dinspre tine spre masă
+  throwDice({ x: -from.x, z: -from.z, power: Math.min(1, 0.4 + (force - 14) / 25) });
+}
+addEventListener('pointerdown', () => {
+  if (shakeOn || room?.state.game !== 'barbut') return;
+  shakeOn = true;
+  const listen = () => addEventListener('devicemotion', onMotion);
+  const ask = window.DeviceMotionEvent?.requestPermission;
+  if (ask) ask().then(r => { if (r === 'granted') listen(); else shakeOn = false; }).catch(() => { shakeOn = false; });
+  else listen();
+}, { capture: true });
+
 // atingerea pe masă la X și 0 / Jenga nu aruncă nimic — acolo alegi celula sau piesa
 const tapAction = () => { if (!['xo', 'jenga'].includes(room?.state.game)) mainAction(); };
 
@@ -389,7 +456,7 @@ function renderBarbut(state, self) {
       ? `${nm(pay.winner)} câștigă ${leiText(pay.won)} (${Object.entries(pay.lost).map(([id, v]) => `${nm(id)} −${leiText(v)}`).join(', ')}). `
       : `${nm(pay.winner)} își ia pariul înapoi (${leiText(pay.pot)}). `)
     : '';
-  const next = turn === self.id ? 'E rândul tău — apasă „Aruncă” sau atinge masa.' : `Urmează: ${nm(turn)}.`;
+  const next = turn === self.id ? 'E rândul tău — dă cu degetul peste masă, scutură telefonul sau apasă „Aruncă”.' : `Urmează: ${nm(turn)}.`;
   const thrown = Object.keys(b.rolls).length > 0; // runda curentă a început
   let big, small;
   if (thrown && state.roll) {
@@ -398,6 +465,7 @@ function renderBarbut(state, self) {
     big = `${state.roll.by === self.id ? 'Ai dat' : `${nm(state.roll.by)} a dat`} ${x} + ${y} = ${x + y} puncte`;
     small = next;
   } else if (r?.type === 'win') {
+    outcome(`zaruri-${b.round}`, r.id === self.id);
     big = `${ic('trophy')} ${r.id === self.id ? 'Ai câștigat runda' : `${nm(r.id)} câștigă runda`}`;
     small = `Cu ${r.sum} puncte. ${payout}${next}`;
   } else if (r?.type === 'tie') {
@@ -576,6 +644,8 @@ function renderLudo(state, self) {
   if (L.last?.type === 'move' && L.last.captured.length) {
     capture = `Captură! Pionul lui ${L.last.captured.map(c => escapeHtml(ownerOf(c.color)?.name ?? '')).join(', ')} se întoarce la start. `;
   }
+  if (L.phase !== 'over') view.outcome = null;
+  else outcome('ludo', L.winner === self.color);
   if (L.phase === 'over') {
     $('#info-big').innerHTML = `${ic('trophy')} ${escapeHtml(ownerOf(L.winner)?.name ?? ludo.COLOR_NAMES[L.winner])} a câștigat`;
     $('#info-small').textContent = room.isHost ? 'Din meniu poți porni o partidă nouă.' : 'Gazda poate porni o partidă nouă.';
@@ -617,6 +687,11 @@ function renderXO(state, self) {
   const mark = id => (s.players[0] === id ? `<span style="color:#f87171">${ic('x-bold')}</span>` : s.players[1] === id ? `<span style="color:#60a5fa">${ic('circle-bold')}</span>` : ic('eye'));
   $('#scoreboard').innerHTML = state.players.map(p => `<span class="pill ${s.players[s.turn] === p.id && !s.winner ? 'turn' : ''}">${mark(p.id)}${escapeHtml(p.name)}${p.id === room.selfId ? ' (tu)' : ''}</span>`).join('');
   const mine = s.players[s.turn] === self.id;
+  const placed = s.cells.filter(Boolean).length;
+  if (placed > (view.xoPlaced ?? placed)) sound.tick();
+  view.xoPlaced = placed;
+  if (!s.winner) view.outcome = null;
+  else if (s.players.includes(self.id)) outcome('xo', s.winner === 'draw' ? null : s.winner === self.id);
   if (s.winner) {
     $('#info-big').innerHTML = s.winner === 'draw' ? 'Remiză' : `${ic('trophy')} ${nm(s.winner)} a făcut linie`;
     $('#info-small').textContent = room.isHost ? '' : 'Gazda poate porni un joc nou.';
@@ -675,6 +750,7 @@ function grabBlock(raycaster) {
   if (block === null || !jenga.pullable(j.slots, block)) return false; // atingerea normală spune de ce nu
   view.jenga.select(block);
   view.jenga.grab(block, raycaster);
+  sound.tick();
   pulling = { block, t: performance.now(), offset: 0, maxSpeed: 0 };
   renderJenga(state, self);
   return true;
@@ -715,6 +791,8 @@ function renderJenga(state, self) {
   if (!mine && selected !== null) view.jenga.select(null);
   view.newGame = false;
   $('#main-action').hidden = true;
+  if (j.phase !== 'over') view.outcome = null;
+  else if (j.order.includes(self.id)) outcome('jenga', j.loser !== self.id);
   if (j.phase === 'over') {
     $('#info-big').innerHTML = `${ic('warning-circle')} Turnul a căzut`;
     $('#info-small').textContent = `${nameOf(j.loser)} a pierdut după ${j.moves} ${j.moves === 1 ? 'tragere' : 'trageri'}.`;
@@ -804,25 +882,9 @@ async function startRpsView(v) {
 $('#rps-bot').addEventListener('click', () => room.dispatch({ type: 'add-bot' }));
 const ARTICLE = { 'Piatră': 'Piatra', 'Hârtie': 'Hârtia', 'Foarfecă': 'Foarfeca' };
 
-// Numărătoarea: 3… 2… 1… Acum! — câte o bătaie la 0,9 s, cu bip și vibrație, ca să arătați gestul pe ritm.
+// Numărătoarea: 3… 2… 1… Acum! — câte o bătaie la 0,9 s, cu bip și vibrație (sound.js), ca să arătați gestul pe ritm.
 // Gestul se citește puțin după „Acum!” (GRACE_MS), cât ajunge mâna în poziție.
 const BEAT_MS = RPS_COUNTDOWN_MS / 3, GRACE_MS = 350;
-let audio = null;
-// pe iPhone sunetul pornește doar după o atingere, așa că îl deblocăm la prima atingere din aplicație
-addEventListener('pointerdown', () => {
-  try { audio ??= new AudioContext(); audio.resume(); } catch { /* fără sunet */ }
-}, { capture: true });
-function beep(go) {
-  navigator.vibrate?.(go ? 120 : 40);
-  if (audio?.state !== 'running') return;
-  const osc = audio.createOscillator(), gain = audio.createGain(), t = audio.currentTime;
-  osc.frequency.value = go ? 1320 : 880;
-  gain.gain.setValueAtTime(0.25, t);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + (go ? 0.3 : 0.12));
-  osc.connect(gain).connect(audio.destination);
-  osc.start(t);
-  osc.stop(t + 0.3);
-}
 // beat: 0, 1, 2 → „3”, „2”, „1”; 3 → „Acum!”; null → ascunde
 function showBeat(beat) {
   const el = $('#rps-count');
@@ -832,7 +894,8 @@ function showBeat(beat) {
   void el.offsetWidth; // repornește animația
   el.classList.add('pop');
   el.classList.toggle('go', beat === 3);
-  beep(beat === 3);
+  sound.beep(beat === 3);
+  vibrate(beat === 3 ? 120 : 40);
 }
 
 const solo = () => room.state.players.length === 1;
@@ -872,6 +935,7 @@ function renderRps(state, self) {
     $('#picks').innerHTML = '';
   } else if (s.phase === 'reveal') {
     const r = s.result;
+    if (s.picks[self.id] !== undefined) outcome(`rps-${s.round}`, r.type === 'win' ? r.winners.includes(self.id) : null);
     $('#info-big').innerHTML = r.type === 'win' ? `${ic('trophy')} ${r.winners.map(nm).join(' și ')} câștigă` : 'Egalitate';
     $('#info-small').textContent = r.type === 'win' ? `${ARTICLE[r.gesture]} câștigă runda.` : 'Nimeni nu câștigă runda asta.';
     $('#picks').innerHTML = state.players.map(p => {
@@ -937,6 +1001,7 @@ function finishLocalRound(v, hands) {
       if (w < 0) score[0] += 1; else if (w > 0) score[1] += 1;
       $('#info-big').innerHTML = `${ic(GESTURE_ICON[left])} vs ${ic(GESTURE_ICON[right])}`;
       $('#info-small').textContent = w < 0 ? 'Stânga câștigă!' : w > 0 ? 'Dreapta câștigă!' : 'Egalitate';
+      if (w) celebrate();
     }
   } else {
     const mine = myGesture(v);
@@ -949,6 +1014,7 @@ function finishLocalRound(v, hands) {
       if (w < 0) score[0] += 1; else if (w > 0) score[1] += 1;
       $('#info-big').innerHTML = `${ic(GESTURE_ICON[mine])} vs ${ic(GESTURE_ICON[cpu])}`;
       $('#info-small').textContent = `Calculatorul: ${cpu}. ` + (w < 0 ? 'Ai câștigat!' : w > 0 ? 'Calculatorul câștigă.' : 'Egalitate.');
+      if (w < 0) celebrate(); else if (w > 0) lost();
     }
   }
   L.phase = 'cooldown';
