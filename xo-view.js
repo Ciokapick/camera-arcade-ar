@@ -39,6 +39,12 @@ export function createXO() {
     m.traverse(o => { o.castShadow = true; });
     return m;
   };
+  // unde arată degetul: un disc pe căsuță care se umple cât ții degetul acolo
+  const hoverMaterial = new THREE.MeshBasicMaterial({ color: 0x7c8cff, transparent: true, opacity: 0.35, depthWrite: false });
+  const hoverDisc = new THREE.Mesh(new THREE.CircleGeometry(CELL * 0.42, 40).rotateX(-Math.PI / 2), hoverMaterial);
+  const hoverRing = new THREE.Mesh(new THREE.RingGeometry(CELL * 0.42, CELL * 0.47, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7c8cff }));
+  hoverDisc.visible = hoverRing.visible = false;
+  group.add(hoverDisc, hoverRing);
   const marks = new Map(); // celulă → { mesh, born }
   let line = null, time = 0, winning = new Set();
   const plane = new THREE.Plane();
@@ -67,6 +73,16 @@ export function createXO() {
         line.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
         group.add(line);
       }
+    },
+    // degetul arată spre `cell` (sau null); progress 0..1 cât a stat acolo
+    hover(cell, progress = 0) {
+      hoverDisc.visible = hoverRing.visible = cell !== null;
+      if (cell === null) return;
+      const p = cellPos(cell);
+      hoverRing.position.set(p.x, TOP + 0.0012, p.z);
+      hoverDisc.position.set(p.x, TOP + 0.001, p.z);
+      hoverDisc.scale.setScalar(0.15 + 0.85 * progress);
+      hoverMaterial.opacity = 0.25 + 0.5 * progress;
     },
     // celula de pe tablă unde a nimerit atingerea (raza intersectată cu planul tablei)
     pick(raycaster) {

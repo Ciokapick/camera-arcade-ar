@@ -313,3 +313,10 @@ test('zaruri: aruncarea cu degetul ajunge la toți, curățată', () => {
   r = reduce(r, { type: 'roll', values: [1, 2], fling: { x: 'a' } }, 'a');
   assert.equal(r.roll.fling, null);
 });
+
+test('zaruri: aruncate din mână — start și viteză limitate', () => {
+  let r = reduce(room(), { type: 'select', game: 'barbut' }, 'h');
+  r = reduce(r, { type: 'roll', values: [3, 4], fling: { x: 0, z: -1, power: 0.5, start: [3, 2, 4], vel: [0, 0, -9] } }, 'h');
+  assert.deepEqual(r.roll.fling.start.map(v => +v.toFixed(2)), [0.36, 0.5, 0.48]);
+  assert.deepEqual(r.roll.fling.vel, [0, 0, -2]);
+});

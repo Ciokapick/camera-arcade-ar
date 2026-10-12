@@ -2,12 +2,12 @@
 
 Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), singur sau cu prietenii:
 
-- **Joc de zaruri**: două zaruri 3D cu fizică reală; pe rând, fiecare aruncă și vede imediat câte puncte a făcut; cine are mai multe ia runda (la egalitate aruncă din nou doar cei la egalitate).
+- **Joc de zaruri**: două zaruri 3D cu fizică reală; pe rând, fiecare aruncă și vede imediat câte puncte a făcut; cine are mai multe ia runda (la egalitate aruncă din nou doar cei la egalitate). În AR zarurile îți apar în palmă: strângi pumnul, le agiți și deschizi mâna ca să le arunci pe masă. Pe ecran: dai cu degetul peste masă sau scuturi telefonul.
   - **Pe bani** (bonus, îl pornește gazda): fiecare își pune bancnota în fața camerei înainte să arunce; aplicația recunoaște bancnota (1–500 lei), câștigătorul rundei ia potul și se ține soldul fiecăruia.
-- **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din camera din spate (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru, cu numărătoare 3–2–1 (bip și vibrație), iar gestul se arată pe „Acum!”. Singur pe telefon: o mână = tu contra calculatorului, două mâini = doi jucători.
+- **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din camera din spate (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru, cu numărătoare 3–2–1 (bip și vibrație), iar gestul se arată pe „Acum!”. Singur pe telefon: o mână = tu contra calculatorului, două mâini = doi jucători. Deasupra fiecărei mâini plutește gestul ca obiect 3D (piatră, foaie, foarfecă), adversarul apare sus, iar la final obiectele se ciocnesc și cel învins se sparge.
 - **Nu te supăra, frate**: 2–4 jucători, fiecare cu culoarea aleasă, tabla 3D pe masă.
-- **Jenga**: turn de 54 de piese pe masă; pe rând prinzi o piesă cu degetul și o tragi afară, apoi ea urcă sus; cine dărâmă turnul pierde. Dacă tragi prea repede, turnul se clatină și riscul crește. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
-- **X și 0**: clasic, 3×3, tabla pe masă.
+- **Jenga**: turn de 54 de piese pe masă; pe rând prinzi o piesă (cu degetul pe ecran sau, în AR, între degetul mare și arătător), o scoți și o duci tu sus pe turn; cine dărâmă turnul pierde. Dacă tragi prea repede, turnul se clatină și riscul crește. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
+- **X și 0**: clasic, 3×3, tabla pe masă. În AR pui degetul real pe o căsuță și îl ții o clipă.
 
 ## Cum se joacă
 
@@ -34,6 +34,9 @@ Explicat pe larg, pas cu pas: [DOCUMENTATIE.md](DOCUMENTATIE.md).
 | `xo.js`, `xo-view.js` | regulile și calculatorul / tabla 3×3 |
 | `ar.js` | scena: ecran / WebXR (Android) / AlvaAR SLAM + giroscop (iPhone) / marker ArUco (js-aruco2) |
 | `hands.js` | recunoașterea mâinilor și a gestului |
+| `ar.js` → `makeHand` | mâna reală în scena AR: raze 3D prin degete, distanța estimată din mărimea palmei, ciupit |
+| `rps-ar.js` | obiectele 3D de la piatră–hârtie–foarfecă și ciocnirea |
+| `sound.js` | sunete sintetizate, vibrație, confetti |
 | `banknotes.js`, `banknote-refs.json` | recunoașterea bancnotelor: rețea neuronală (MediaPipe Image Embedder) + cel mai apropiat vecin |
 | `app.js`, `index.html` | interfața (Inter + iconițe Phosphor prin Iconify) |
 

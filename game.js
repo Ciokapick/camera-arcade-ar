@@ -245,11 +245,22 @@ function validDice(values, count) {
 }
 
 // fling: cum a aruncat (direcția pe masă x/z și puterea 0..1), ca toți să vadă aceeași aruncare
+// din mână: start (unde era mâna, m) și vel (viteza ei, m/s), local față de masă — limitate la ceva rezonabil
 function cleanFling(f) {
   const x = Number(f?.x), z = Number(f?.z), power = Number(f?.power);
   if (![x, z, power].every(Number.isFinite) || Math.hypot(x, z) < 1e-6) return null;
   const n = Math.hypot(x, z);
-  return { x: x / n, z: z / n, power: Math.max(0, Math.min(1, power)) };
+  const fling = { x: x / n, z: z / n, power: Math.max(0, Math.min(1, power)) };
+  const vec = v => (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) ? v.map(Number) : null);
+  const start = vec(f.start), vel = vec(f.vel);
+  if (start && vel) {
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const r = Math.hypot(start[0], start[2]), k = r > 0.6 ? 0.6 / r : 1;
+    fling.start = [start[0] * k, clamp(start[1], 0.03, 0.5), start[2] * k];
+    const speed = Math.hypot(...vel), m = speed > 2 ? 2 / speed : 1;
+    fling.vel = vel.map(v => v * m);
+  }
+  return fling;
 }
 
 function barbutRoll(r, me, values, fling) {

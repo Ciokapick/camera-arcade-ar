@@ -55,6 +55,10 @@ export function createJenga() {
   let slots = null, selected = null, anim = null, lastSeq = null, time = 0, fallen = false;
   // piesa trasă cu degetul: { i, axis, center, plane, s0, offset }; wobble = cât se clatină turnul (0..1)
   let held = null, wobble = 0;
+  // unde va ajunge piesa sus: o piesă „fantomă”, transparentă
+  const ghost = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0xc9ff4a, transparent: true, opacity: 0.35, depthWrite: false }));
+  ghost.visible = false;
+  tower.add(ghost);
   const plane = new THREE.Plane(), hit = new THREE.Vector3();
   // raza atingerii, în coordonatele turnului
   const localRay = raycaster => {
@@ -82,10 +86,12 @@ export function createJenga() {
       if (!fresh && j.last && j.last.seq !== lastSeq) {
         lastSeq = j.last.seq;
         const { block, dir, from, fell } = j.last;
-        // dacă ai tras-o tu cu degetul, continuă de unde ai lăsat-o
-        const offset = held?.i === block ? held.offset : 0;
+        // dacă ai tras-o tu cu degetul, continuă de unde ai lăsat-o (scoasă pe jumătate sau dusă deja spre vârf)
+        const mine = held?.i === block ? held : null;
         held = null;
-        anim = { t: 0, i: block, start: slotPose(from.level, from.slot), axis: axisOf(from.level), dir, offset, end: restPose(block), fell, slotsAfter: j.slots };
+        ghost.visible = false;
+        anim = { t: 0, i: block, start: slotPose(from.level, from.slot), axis: axisOf(from.level), dir, offset: mine?.offset ?? 0, end: restPose(block), fell, slotsAfter: j.slots };
+        if (mine?.carrying) { anim.from = blocks[block].position.clone(); anim.t = 0.6; }
         sound.wood(0.5);
         return;
       }
@@ -97,8 +103,10 @@ export function createJenga() {
         return;
       }
       fallen = false;
+      const carried = held?.carrying ? blocks[held.i].position.clone() : null;
       snap();
-      if (held) blocks[held.i].position.copy(held.center).addScaledVector(held.axis, held.offset);
+      if (carried) blocks[held.i].position.copy(carried);
+      else if (held) blocks[held.i].position.copy(held.center).addScaledVector(held.axis, held.offset);
     },
     // apuci piesa i: planul de tragere conține axa lungă a piesei și e cât mai „cu fața” spre cameră
     grab(i, raycaster) {
@@ -118,10 +126,27 @@ export function createJenga() {
       blocks[held.i].position.copy(held.center).addScaledVector(held.axis, held.offset);
       return held.offset;
     },
+    // a ieșit din turn: de-acum o duci liber (cu degetul / mâna), iar fantoma arată unde ajunge sus
+    startCarry(target) {
+      if (!held) return;
+      held.carrying = true;
+      poseToMesh(ghost, slotPose(target.level, target.slot));
+      ghost.visible = true;
+    },
+    // piesa urmărește raza pe un plan vertical, cu fața spre cameră, prin locul unde e acum
+    carry(raycaster) {
+      if (!held?.carrying) return;
+      const ray = localRay(raycaster), mesh = blocks[held.i];
+      const normal = new THREE.Vector3(ray.direction.x, 0, ray.direction.z);
+      if (normal.lengthSq() < 1e-6) return;
+      plane.setFromNormalAndCoplanarPoint(normal.normalize(), mesh.position);
+      if (ray.intersectPlane(plane, hit)) mesh.position.set(hit.x, Math.max(H / 2, hit.y), hit.z);
+    },
     // ai dat drumul înainte să iasă: piesa se întoarce la loc
     release() {
       if (held) poseToMesh(blocks[held.i], restPose(held.i));
       held = null;
+      ghost.visible = false;
     },
     // cât de tare se clatină (0 = deloc, 1 = tare)
     shake(level) { wobble = Math.max(wobble, Math.min(1, level)); },
@@ -142,6 +167,7 @@ export function createJenga() {
       wobble *= Math.exp(-dt * 3);
       tower.rotation.set(Math.sin(time * 23) * wobble * 0.012, 0, Math.sin(time * 19) * wobble * 0.012);
       if (!anim) {
+        if (held?.carrying) ghost.material.opacity = 0.25 + Math.sin(time * 6) * 0.1;
         if (selected !== null && held?.i !== selected) {
           // piesa aleasă iese puțin din turn și „respiră”
           const p = restPose(selected), a = axisOf(slots[selected].level), k = 0.004 + Math.sin(time * 5) * 0.002;
@@ -166,7 +192,7 @@ export function createJenga() {
       } else if (anim.t < OUT + CARRY) {
         const k = (anim.t - OUT) / CARRY;
         const d = L * 1.25 * anim.dir;
-        const from = new THREE.Vector3(anim.start[0] + anim.axis[0] * d, anim.start[1], anim.start[2] + anim.axis[2] * d);
+        const from = anim.from ?? new THREE.Vector3(anim.start[0] + anim.axis[0] * d, anim.start[1], anim.start[2] + anim.axis[2] * d);
         const to = new THREE.Vector3(anim.end[0], anim.end[1], anim.end[2]);
         mesh.position.lerpVectors(from, to, k);
         mesh.position.y += Math.sin(k * Math.PI) * 0.06;

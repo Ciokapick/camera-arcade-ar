@@ -44,6 +44,7 @@
     #rps-view.show { display: block; }
     .stage-layer, #rps-video, #rps-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .stage-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .rps-3d { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 12; }
     #rps-count { position: absolute; left: 50%; top: 24%; width: 128px; height: 128px; margin-left: -64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 15; pointer-events: none; font-size: 72px; font-weight: 800; letter-spacing: -.03em; color: #fff; background: rgba(11, 12, 15, .62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 40px rgba(0,0,0,.35); }
     #rps-count:empty { display: none; }
     #rps-count.go { font-size: 32px; color: #0b0c0f; background: var(--accent); }

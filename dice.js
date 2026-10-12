@@ -83,9 +83,11 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
   });
 
   let playback = null; // { frames, fix, t, values, done }
+  let held = null, holdTime = 0; // zarurile ținute în palmă (punct local)
 
   // power 0..1: cât de tare ai aruncat (degetul / scuturatul); 0.5 = aruncare obișnuită
-  function simulate(seed, from, power = 0.5) {
+  // launch { start, vel } (local, m și m/s): aruncate din mână — pleacă exact de acolo, cu viteza mâinii
+  function simulate(seed, from, power = 0.5, launch = null) {
     const rand = seededRandom(seed);
     const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0), allowSleep: true });
     const diceMaterial = new CANNON.Material(), tableMaterial = new CANNON.Material();
@@ -103,7 +105,7 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
       }
     }
     // aruncare scurtă cu mult spin dinspre `from`, ca zarurile să rămână în zona văzută
-    const forward = from.clone().setY(0);
+    const forward = (launch ? launch.vel.clone().negate() : from.clone()).setY(0);
     if (forward.lengthSq() < 1e-6) forward.set(0, 0, 1);
     forward.normalize().negate();
     const side = new THREE.Vector3(-forward.z, 0, forward.x);
@@ -113,11 +115,12 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     const bodies = meshes.map((mesh, i) => {
       const body = new CANNON.Body({ mass: 0.02, material: diceMaterial, shape: new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 2)), sleepSpeedLimit: 0.05, sleepTimeLimit: 0.3, linearDamping: 0.1, angularDamping: 0.35 });
       const offset = (i - (count - 1) / 2) * size * 1.6;
-      const start = forward.clone().multiplyScalar(-reach).addScaledVector(side, offset);
-      body.position.set(start.x, floor + 0.1 + size * 2, start.z);
+      const start = launch ? launch.start.clone().addScaledVector(side, offset) : forward.clone().multiplyScalar(-reach).addScaledVector(side, offset);
+      body.position.set(start.x, launch ? Math.max(floor + size, start.y) : floor + 0.1 + size * 2, start.z);
       body.quaternion.setFromEuler(rand() * 6.3, rand() * 6.3, rand() * 6.3);
       const speed = (0.15 + rand() * 0.15) * (0.5 + power);
-      body.velocity.set(forward.x * speed + (rand() - 0.5) * 0.05, 0.2, forward.z * speed + (rand() - 0.5) * 0.05);
+      if (launch) body.velocity.set(launch.vel.x + (rand() - 0.5) * 0.08, launch.vel.y, launch.vel.z + (rand() - 0.5) * 0.08);
+      else body.velocity.set(forward.x * speed + (rand() - 0.5) * 0.05, 0.2, forward.z * speed + (rand() - 0.5) * 0.05);
       const spin = 24 * (0.6 + power * 0.8);
       body.angularVelocity.set((rand() - 0.5) * spin, (rand() - 0.5) * spin, (rand() - 0.5) * spin);
       // fiecare lovitură (de masă, de perete, de celălalt zar) → un clinchet la redare
@@ -142,15 +145,32 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     meshes,
     get busy() { return !!playback && !playback.done; },
     /** values: valorile cerute; seed: același pe toate telefoanele; from: direcția (locală) din care vin zarurile */
-    throw({ values, seed, from, power }) {
-      const { frames, impacts } = simulate(seed, from, power);
+    throw({ values, seed, from, power, launch }) {
+      held = null;
+      const { frames, impacts } = simulate(seed, from, power, launch);
       const last = frames.at(-1);
       const fix = last.map((f, i) => relabel(topValue(new THREE.Quaternion(f[3], f[4], f[5], f[6])), values[i]));
       playback = { frames, impacts, fix, t: 0, frame: -1, values, done: false };
       meshes.forEach(m => { m.visible = true; });
     },
+    // zarurile în mână: urmăresc punctul `at` (local) lin, rotindu-se ușor; null = le ascunzi (în pumn)
+    hold(at) {
+      if (this.busy) return;
+      playback = null;
+      held = at ? at.clone() : null;
+      meshes.forEach(m => { m.visible = !!at; });
+    },
     // avansează animația; întoarce valorile o singură dată, când zarurile s-au oprit
     update(dt) {
+      if (held) {
+        holdTime += dt;
+        meshes.forEach((m, i) => {
+          const target = held.clone().add(new THREE.Vector3((i - (count - 1) / 2) * size * 1.15, size * 0.6, 0));
+          m.position.lerp(target, Math.min(1, dt * 12));
+          m.rotation.set(holdTime * 0.7 + i, holdTime * 0.5, 0);
+        });
+        return null;
+      }
       if (!playback || playback.done) return null;
       playback.t += dt * PLAYBACK_SPEED;
       const index = Math.min(playback.frames.length - 1, Math.floor(playback.t * 60));
