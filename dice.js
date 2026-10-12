@@ -116,6 +116,8 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
       const body = new CANNON.Body({ mass: 0.02, material: diceMaterial, shape: new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 2)), sleepSpeedLimit: 0.05, sleepTimeLimit: 0.3, linearDamping: 0.1, angularDamping: 0.35 });
       const offset = (i - (count - 1) / 2) * size * 1.6;
       const start = launch ? launch.start.clone().addScaledVector(side, offset) : forward.clone().multiplyScalar(-reach).addScaledVector(side, offset);
+      // cu pereți (tabla de Ludo): din mână, dar înăuntrul lor
+      if (launch && bounds) { start.x = Math.max(-bounds * 0.8, Math.min(bounds * 0.8, start.x)); start.z = Math.max(-bounds * 0.8, Math.min(bounds * 0.8, start.z)); }
       body.position.set(start.x, launch ? Math.max(floor + size, start.y) : floor + 0.1 + size * 2, start.z);
       body.quaternion.setFromEuler(rand() * 6.3, rand() * 6.3, rand() * 6.3);
       const speed = (0.15 + rand() * 0.15) * (0.5 + power);

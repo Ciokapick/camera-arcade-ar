@@ -6,7 +6,7 @@ import { COLORS, NOTES, RPS_COUNTDOWN_MS, barbutTurn, jengaTurn, playerById } fr
 import * as banknotes from './banknotes.js';
 import * as ludo from './ludo.js';
 import { createDice } from './dice.js';
-import { createBoard, SEAT, SIZE as BOARD_SIZE } from './board.js';
+import { createBoard, SEAT, SIZE as BOARD_SIZE, TOP as TOP_Y } from './board.js';
 import { createXO } from './xo-view.js';
 import { createJenga } from './jenga-view.js';
 import * as jenga from './jenga.js';
@@ -290,6 +290,7 @@ function startStageView(v) {
       footprint: BOARD_SIZE * 0.62,
       facing: SEAT[me().color],
       pick: raycaster => pickPawn(raycaster),
+      hands: ludoHands,
       update: dt => {
         if (board.update(dt)) settled();
         syncBoard();
@@ -427,12 +428,14 @@ function flickEnd() {
 
 // Cu mâna reală (AR): palma deschisă → zarurile îți apar în palmă; strângi pumnul → sunt în mână și le agiți
 // (clinchet la fiecare schimbare de sens); deschizi mâna → le arunci de acolo, cu viteza mâinii.
-function diceHands(hands) {
+// La fel la „Nu te supăra” (un zar): canThrow() = e rândul tău să dai cu zarul; onThrow(fling) = aruncarea.
+const diceHands = hands => handDice(hands, myDiceTurn, throwDice, 'Zarurile sunt în palma ta');
+function handDice(hands, canThrow, onThrow, inPalm) {
   const v = view, dice = v.content.dice, hand = hands[0];
   const H = (v.hand ??= { state: 'idle', track: [], shakes: 0 });
-  if (!myDiceTurn() || !hand) {
+  if (!canThrow() || !hand) {
     if (H.state !== 'idle' && !v.content.busy) dice.hold(null);
-    if (!hand || !myDiceTurn()) Object.assign(H, { state: 'idle', track: [], shakes: 0 });
+    Object.assign(H, { state: 'idle', track: [], shakes: 0 });
     return;
   }
   const g = v.content.group, now = performance.now();
@@ -468,12 +471,12 @@ function diceHands(hands) {
     const power = Math.min(1, 0.3 + H.shakes * 0.1);
     Object.assign(H, { state: 'idle', track: [], shakes: 0 });
     const dir = Math.hypot(vel.x, vel.z) > 1e-4 ? vel : new THREE.Vector3(0, 0, -1);
-    throwDice({ x: dir.x, z: dir.z, power, start: at.toArray(), vel: vel.toArray() });
+    onThrow({ x: dir.x, z: dir.z, power, start: at.toArray(), vel: vel.toArray() });
     return;
   }
   H.state = 'palm';
   dice.hold(at);
-  $('#info-small').textContent = 'Zarurile sunt în palma ta. Strânge pumnul și agită!';
+  $('#info-small').textContent = `${inPalm}. Strânge pumnul și agită!`;
 }
 
 // scuturat: accelerație (fără gravitație) peste ~14 m/s²; iPhone cere voie, o dată, dintr-o atingere
@@ -684,6 +687,47 @@ function syncBoard() {
   v.board.highlight(self.color, mine ? ludo.legalMoves(L, self.color, L.die).map(m => m.pawn) : []);
 }
 
+// „Nu te supăra” cu mâna: zarul din palmă (ca la zaruri), iar pionul îl ciupești, îl duci deasupra tablei
+// (inelul verde arată unde ajunge) și desfaci degetele.
+const myLudoRoll = () => {
+  const L = room?.state.ludo;
+  return room?.state.game === 'ludo' && L.phase === 'roll' && ludo.current(L) === me()?.color && !view.board.animating && !view.content.busy;
+};
+const ludoThrow = fling => { if (myLudoRoll()) room.dispatch({ type: 'roll', values: [d6()], fling }); };
+function boardPoint(ray) {
+  const g = view.content.group, local = g.worldToLocal(ray.ray.origin.clone()), far = g.worldToLocal(ray.ray.origin.clone().add(ray.ray.direction));
+  const dir = far.sub(local);
+  if (Math.abs(dir.y) < 1e-6) return null;
+  const t = (TOP_Y + 0.02 - local.y) / dir.y;
+  return t > 0 ? local.addScaledVector(dir, t) : null;
+}
+function ludoHands(hands) {
+  const v = view, L = room?.state.ludo, self = me();
+  if (!L || !self) return;
+  if (L.phase === 'roll') return handDice(hands, myLudoRoll, ludoThrow, 'Zarul e în palma ta');
+  const mine = L.phase === 'move' && ludo.current(L) === self.color && !v.board.animating;
+  const hand = hands[0];
+  if (!mine) { if (v.pawnGrab) { v.board.cancel(); v.pawnGrab = null; } return; }
+  if (!hand) { if (v.pawnGrab && ++v.pawnLost > 6) { v.board.cancel(); v.pawnGrab = null; } return; }
+  const ray = hand.ray(hand.mid(4, 8));
+  if (hand.pinch) {
+    v.pawnLost = 0;
+    if (!v.pawnGrab) {
+      const pawn = v.board.pick(ray, self.color);
+      const move = pawn === null ? null : ludo.legalMoves(L, self.color, L.die).find(m => m.pawn === pawn);
+      if (move) { v.pawnGrab = move; v.board.grab(self.color, pawn, move.to); sound.tick(); $('#info-small').textContent = 'Du-l pe inelul verde și desfă degetele.'; }
+    } else {
+      const point = boardPoint(ray);
+      if (point) v.board.carry(point);
+    }
+  } else if (v.pawnGrab && ++v.pawnLost >= 3) {
+    const { pawn } = v.pawnGrab;
+    v.pawnGrab = null;
+    v.board.drop();
+    room.dispatch({ type: 'move', pawn });
+  }
+}
+
 function pickPawn(raycaster) {
   const state = room?.state, self = me();
   if (!state?.ludo || state.ludo.phase !== 'move' || ludo.current(state.ludo) !== self.color) return false;
@@ -713,8 +757,8 @@ function renderLudo(state, self) {
   } else {
     $('#info-big').textContent = mine ? 'E rândul tău' : `${current?.name ?? ''} e la rând`;
     $('#info-small').textContent = capture + (L.phase === 'roll'
-      ? (mine ? (L.tries === 2 ? 'Mai ai 2 încercări să dai 6. ' : L.tries === 1 ? 'Mai ai o încercare să dai 6. ' : '') + 'Dă cu zarul.' : `${current?.name ?? ''} dă cu zarul…`)
-      : (mine ? `Ai dat ${L.die}. Alege pionul — atinge-l pe tablă sau mai jos.` : `${current?.name ?? ''} a dat ${L.die} și mută…`));
+      ? (mine ? (L.tries === 2 ? 'Mai ai 2 încercări să dai 6. ' : L.tries === 1 ? 'Mai ai o încercare să dai 6. ' : '') + (view.mode === 'screen' ? 'Dă cu zarul.' : 'Arată palma: zarul îți apare în mână.') : `${current?.name ?? ''} dă cu zarul…`)
+      : (mine ? (view.mode === 'screen' ? `Ai dat ${L.die}. Alege pionul — atinge-l pe tablă sau mai jos.` : `Ai dat ${L.die}. Ciupește un pion cu inel verde și du-l pe tablă.`) : `${current?.name ?? ''} a dat ${L.die} și mută…`));
   }
   const moves = mine && L.phase === 'move' ? ludo.legalMoves(L, color, L.die) : [];
   $('#pawn-buttons').innerHTML = moves.map(m => `<button class="btn" data-pawn="${m.pawn}">Pionul ${m.pawn + 1}${m.from === ludo.YARD ? ' · iese' : m.to >= ludo.TRACK ? ' · la final' : ''}</button>`).join('');
@@ -1058,7 +1102,9 @@ function renderRps(state, self) {
   } else if (s.phase === 'reveal') {
     const r = s.result;
     if (s.picks[self.id] !== undefined) outcome(`rps-${s.round}`, r.type === 'win' ? r.winners.includes(self.id) : null);
-    $('#info-big').innerHTML = r.type === 'win' ? `${ic('trophy')} ${r.winners.map(nm).join(' și ')} câștigă` : 'Egalitate';
+    $('#info-big').innerHTML = r.type !== 'win' ? 'Egalitate'
+      : r.winners.includes(self.id) ? `${ic('trophy')} Ai câștigat${r.winners.length > 1 ? ` (cu ${r.winners.filter(id => id !== self.id).map(nm).join(', ')})` : ''}`
+        : `${ic('trophy')} ${r.winners.map(nm).join(' și ')} câștigă`;
     $('#info-small').textContent = r.type === 'win' ? `${ARTICLE[r.gesture]} câștigă runda.` : 'Nimeni nu câștigă runda asta.';
     $('#picks').innerHTML = state.players.map(p => {
       const g = s.picks[p.id];

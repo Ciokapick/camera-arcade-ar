@@ -184,6 +184,7 @@ Măsurat: 10/10 pe poze reale și 111/112 pe imagini stricate intenționat (blur
 - **X și 0**: raza prin vârful arătătorului lovește tabla exact sub deget (când degetul e pe masă, punctul de pe ecran *este* punctul de pe masă). Ții degetul 0,8 s pe căsuță → pui semnul.
 - **Jenga**: „ciupitul” = degetul mare lipit de arătător (relativ la lățimea palmei). Ciupești o piesă → o apuci; muți mâna → o tragi pe axa ei; după ce a ieșit, o duci liber (o piesă-fantomă verde arată unde ajunge sus); desfaci degetele → o așezi.
 - **Zaruri**: distanța până la mână se estimează din mărimea ei pe ecran (încheietura → baza degetului mijlociu ≈ 8,5 cm), deci știm unde e palma în 3D. Palmă deschisă = zarurile în mână; pumn = le agiți (fiecare schimbare de sens = clinchet); deschizi mâna = aruncare din poziția mâinii, cu viteza ei. Poziția și viteza pleacă la toți, așa că toată lumea vede aceeași aruncare.
+- **Nu te supăra**: zarul din palmă, exact ca la zaruri (`handDice`, comun); pionul cu inel îl ciupești, îl duci deasupra tablei (inelul verde arată căsuța unde ajunge) și desfaci degetele.
 - **Piatră–hârtie–foarfecă** (`rps-ar.js`): același calcul pune un obiect 3D deasupra fiecărei mâini; adversarul „se gândește” sus; la rezultat câștigătorul zboară în cel învins, care se sparge în bucăți.
 
 Pe Android, WebXR nu dă acces la imaginea camerei, așa că modul „pe masă” folosește acum SLAM peste tot (WebXR rămâne cu `?webxr`).

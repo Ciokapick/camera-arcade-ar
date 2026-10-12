@@ -74,7 +74,7 @@ function apply(r, a, from) {
       return;
     case 'roll':
       if (!me) return false;
-      return r.game === 'barbut' ? barbutRoll(r, me, a.values, a.fling) : r.game === 'ludo' ? ludoRoll(r, me, a.values) : false;
+      return r.game === 'barbut' ? barbutRoll(r, me, a.values, a.fling) : r.game === 'ludo' ? ludoRoll(r, me, a.values, a.fling) : false;
     case 'move':
       if (r.game !== 'ludo' || !me || !ludo.move(r.ludo, me.color, a.pawn)) return false;
       return;
@@ -311,9 +311,9 @@ function barbutBet(r, me, amount) {
 
 // ---------------------------------------------------------------- Nu te supăra, frate
 
-function ludoRoll(r, me, values) {
+function ludoRoll(r, me, values, fling) {
   if (!validDice(values, 1) || !ludo.roll(r.ludo, me.color, values[0])) return false;
-  r.roll = { by: me.id, values, seq: r.seq + 1 };
+  r.roll = { by: me.id, values, seq: r.seq + 1, fling: cleanFling(fling) };
 }
 
 // ---------------------------------------------------------------- Piatră-hârtie-foarfecă (2–4 jucători)

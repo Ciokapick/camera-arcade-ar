@@ -141,10 +141,43 @@ export function createBoard() {
     return cells;
   }
 
+  // unde ajunge pionul dus cu mâna: un inel verde pe căsuța de destinație
+  const target = new THREE.Mesh(new THREE.RingGeometry(0.008, 0.012, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xc9ff4a, transparent: true, opacity: 0.8, depthWrite: false }));
+  target.visible = false;
+  group.add(target);
+  let carried = null; // { pawn, color, index }
+
   let time = 0;
   return {
     group,
     dice,
+    // apuci pionul `index` (cu mâna): se ridică și urmărește mâna; inelul arată căsuța `to`
+    grab(color, index, to) {
+      const pawn = pawns[color]?.[index];
+      if (!pawn) return;
+      carried = { pawn, color, index };
+      target.position.copy(cellPos(pawnCell(color, index, to))).setY(TOP + 0.0008);
+      target.visible = true;
+    },
+    // mută pionul ținut deasupra punctului (local) de pe tablă
+    carry(point) {
+      if (carried) carried.pawn.mesh.position.set(point.x, TOP + 0.02, point.z);
+    },
+    // i-ai dat drumul: mutarea vine din stare; pionul sare direct pe căsuța nouă (nu refacem drumul pas cu pas)
+    drop() {
+      if (!carried) return;
+      carried.pawn.direct = true;
+      carried = null;
+      target.visible = false;
+    },
+    // renunți (mâna a ieșit din cadru): pionul se întoarce la locul lui
+    cancel() {
+      if (!carried) return;
+      const { pawn, color, index } = carried;
+      pawn.mesh.position.copy(cellPos(pawnCell(color, index, pawn.progress)));
+      carried = null;
+      target.visible = false;
+    },
     // aduce pionii la starea din joc; mutările noi se animă pas cu pas
     setState(ludo) {
       for (const color of Object.keys(pawns)) if (!ludo.order.includes(color)) pawns[color].forEach(p => { p.mesh.visible = false; p.ring.visible = false; });
@@ -153,7 +186,8 @@ export function createBoard() {
           const progress = ludo.pawns[color][index];
           pawn.mesh.visible = true;
           if (progress !== pawn.progress) {
-            pawn.path.push(...route(color, index, pawn.progress, progress));
+            pawn.path.push(...(pawn.direct ? [cellPos(pawnCell(color, index, progress))] : route(color, index, pawn.progress, progress)));
+            pawn.direct = false;
             pawn.progress = progress;
           }
         });
@@ -176,6 +210,7 @@ export function createBoard() {
       time += dt;
       for (const list of Object.values(pawns)) {
         for (const pawn of list) {
+          if (pawn === carried?.pawn) { pawn.ring.position.set(pawn.mesh.position.x, TOP + 0.0006, pawn.mesh.position.z); continue; }
           const target = pawn.path[0];
           if (target) {
             // salt de o căsuță: 0.16 s, cu arc
