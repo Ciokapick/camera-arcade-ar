@@ -37,7 +37,7 @@ Nu există `npm install` și nici build. Ai nevoie doar de un server care să se
 npx serve .
 ```
 
-Deschizi adresa afișată (de obicei http://localhost:3000). Camera merge pe `localhost` din browserul de pe laptop. Pe telefon, browserul cere **HTTPS** pentru cameră, așa că acolo testezi pe varianta publicată: https://camera-arcade-ar.vercel.app (Vercel o republică singur la fiecare `git push` pe `main`).
+Deschizi adresa afișată (de obicei http://localhost:3000). Aplicația cere camera la pornire; fără cameră (ex.: un laptop fără webcam) adaugă `?screen` în adresă pentru vederea 3D de test. Camera merge pe `localhost` din browserul de pe laptop. Pe telefon, browserul cere **HTTPS** pentru cameră, așa că acolo testezi pe varianta publicată: https://camera-arcade-ar.vercel.app (Vercel o republică singur la fiecare `git push` pe `main`).
 
 ### De unde vin bibliotecile?
 
@@ -133,7 +133,7 @@ Toate jocurile sunt construite „în metri”, cu masa la înălțimea 0. `ar.j
 
 | Mod | Pe ce merge | Cum află unde e masa |
 |---|---|---|
-| **Pe ecran** | oriunde | nu folosește camera; scenă 3D pe fundal închis |
+| **Pe ecran** (`?screen`) | doar pentru dezvoltare și teste | nu folosește camera; scenă 3D pe fundal închis. În aplicație nu mai apare: jocurile merg doar cu camera |
 | **WebXR** | Chrome pe Android | telefonul (ARCore) găsește singur suprafețele: *hit-test* |
 | **SLAM** | iPhone și restul | AlvaAR urmărește puncte din imagine și calculează mișcarea telefonului |
 | **Marker** | toți cei din aceeași cameră | recunoaște pătratul printat și îi calculează poziția 3D |

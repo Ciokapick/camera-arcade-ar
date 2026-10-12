@@ -11,11 +11,10 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 
 ## Cum se joacă
 
-1. La prima intrare îți scrii numele.
+1. La pornire apeși **Pornește camera** (aplicația merge doar cu camera — AR), apoi, prima dată, îți scrii numele.
 2. **Creează cameră** → primești un cod de 4 litere; prietenii apasă **Intră cu un cod** și îl scriu. Fără cameră joci pe telefonul tău, cu calculatorul (**+ Calculator**).
 3. Gazda alege jocul; toți intră automat în el.
-4. Alegi unde stă jocul:
-   - **Pe ecran** — vedere 3D, fără AR.
+4. Jocul se deschide direct **pe masa ta**; din butonul cu cubul (sus) poți alege:
    - **Pe masa mea** — aplicația caută întâi o suprafață plană, apoi atingi unde vrei tabla/zarurile. Merge oriunde, fiecare pe masa lui (inclusiv cei care nu sunt în aceeași cameră).
    - **Pe markerul comun** — pentru cei din aceeași cameră: pui pe masă [markerul](marker.html) (printat sau pe o tabletă) și tabla apare exact pe el, **în același loc pentru toți**.
 
@@ -61,6 +60,7 @@ Regulile tuturor jocurilor, camera de joc (inclusiv partide întregi jucate de c
 - `?fov=70` — câmpul vizual al camerei pe latura lungă, în grade (implicit 67, camera principală de telefon)
 - `?dist=0.35` — distanța presupusă telefon → masă în modul „Pe masa mea”, în metri (scara)
 - `?marker=0.15` — latura pătratului negru al markerului printat, în metri
+- `?screen` — vedere 3D fără cameră (doar pentru dezvoltare și teste; nu apare în aplicație)
 - `?test-video=/cale/video.mp4` — rulează AR-ul / PHF pe un video înregistrat în loc de cameră (pentru teste)
 
 Camera browserului cere HTTPS (sau localhost).

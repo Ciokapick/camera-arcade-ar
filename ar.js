@@ -527,6 +527,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
 
   return {
     camera,
+    video,
     stats,
     get state() { return state; },
     cameraLocal: () => content.group.worldToLocal(camera.position.clone()),
@@ -646,6 +647,7 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
 
   return {
     camera,
+    video,
     get state() { return state; },
     cameraLocal: () => content.group.worldToLocal(new THREE.Vector3()),
     replace() {},

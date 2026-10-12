@@ -17,6 +17,8 @@ import { sound, vibrate, celebrate, lost } from './sound.js';
 
 const $ = selector => document.querySelector(selector);
 const testVideo = new URLSearchParams(location.search).get('test-video');
+// jocurile merg doar cu camera (AR); ?screen = vedere 3D fără cameră, doar pentru dezvoltare și teste
+const SCREEN = new URLSearchParams(location.search).has('screen');
 const storage = {
   get: key => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* mod privat */ } },
@@ -186,7 +188,7 @@ $('#players').addEventListener('click', event => {
 function enterGameView(game) {
   if (view?.game === game) return;
   leaveGameView();
-  view = { game, mode: 'screen', animatedSeq: room.state.roll?.seq ?? 0, appliedLudoSeq: -1 };
+  view = { game, mode: SCREEN ? 'screen' : 'table', animatedSeq: room.state.roll?.seq ?? 0, appliedLudoSeq: -1 };
   $('#game-title').textContent = GAME_TITLES[game];
   $('#view-button').hidden = game === 'rps';
   $('#money-button').hidden = game !== 'barbut' || !room.isHost;
@@ -298,13 +300,14 @@ function startStageView(v) {
     };
     syncBoard();
   }
-  openMode('screen');
+  openMode(SCREEN ? 'screen' : 'table');
 }
 
 async function openMode(mode) {
   const v = view;
-  if (!v?.content || v.opening) return;
-  v.opening = true;
+  if (!v?.content) return;
+  // ultima alegere câștigă: dacă între timp s-a cerut alt mod, scena care tocmai a pornit se închide
+  const token = v.openToken = {};
   v.stage?.close();
   v.stage = null;
   $('#stage-root').replaceChildren();
@@ -319,22 +322,23 @@ async function openMode(mode) {
       content: v.content,
       videoUrl: testVideo,
       status: text => { if (view === v) $('#ar-status').textContent = text; },
-      // WebXR închis din sistem → revenim pe ecran
-      setState: s => { if (s === 'closed' && view === v && v.stage === stage) { v.stage = null; openMode('screen'); } },
+      // WebXR închis din sistem → alegi din nou din butonul cu cubul
+      setState: s => {
+        if (s === 'closed' && view === v && v.stage === stage) { v.stage = null; v.mode = null; $('#ar-status').textContent = 'AR-ul s-a închis — apasă butonul cu cubul, sus.'; }
+      },
       onTap: tapAction,
     });
-    if (view !== v) { stage.close(); return; }
+    if (view !== v || v.openToken !== token) { stage.close(); return; }
     v.stage = stage;
     v.mode = mode;
   } catch (error) {
     console.error(error);
+    if (v.openToken !== token) return;
     if (view === v && mode !== 'screen') {
-      toast('Nu am putut porni AR-ul: ' + (error.message || error));
-      v.opening = false;
-      return openMode('screen');
+      // fără cameră nu avem variantă: spunem ce e de făcut
+      v.mode = null;
+      $('#ar-status').textContent = `Nu merge camera (${error.message || error}). Permite camera pentru site și apasă butonul cu cubul, sus.`;
     }
-  } finally {
-    v.opening = false;
   }
   document.querySelectorAll('#sheet [data-mode]').forEach(b => b.classList.toggle('selected', b.dataset.mode === v.mode));
   $('#replace-table').hidden = v.mode !== 'table';
@@ -577,15 +581,16 @@ $('#bet-panel').querySelector('#bet-hint').insertAdjacentHTML('beforebegin', '<p
 let bet = null; // { stream, timer, canvas, seen }
 async function openBetSheet() {
   if (bet) return;
-  // pe iPhone nu pot merge două camere deodată: AR-ul trece pe ecran cât pui banii
-  if (view?.mode && view.mode !== 'screen') { toast('AR-ul trece pe ecran cât pui banii.'); await openMode('screen'); }
   bet = { canvas: document.createElement('canvas'), seen: null, streak: 0 };
   $('#bet-sheet').hidden = false;
   $('#bet-seen').textContent = 'Încarc recunoașterea bancnotelor…';
   banknotes.preload().catch(error => console.warn(error));
   const video = $('#bet-video');
   try {
-    if (testVideo) { video.src = testVideo; video.loop = true; } else {
+    // pe iPhone nu merg două camere deodată: folosim fluxul camerei scenei, dacă e pornită
+    const shared = view?.stage?.video?.srcObject;
+    if (shared) video.srcObject = shared;
+    else if (testVideo) { video.src = testVideo; video.loop = true; } else {
       bet.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
       video.srcObject = bet.stream;
     }
@@ -1216,4 +1221,19 @@ function renderLocalIdle(v) {
 
 // ---------------------------------------------------------------- start
 
-if (myName) startLocal(); else askName();
+const begin = () => (myName ? startLocal() : askName());
+// La pornire cerem camera (și, pe iPhone, giroscopul — trebuie cerut dintr-o atingere, înainte de orice await).
+$('#camera-allow').addEventListener('click', async () => {
+  window.DeviceOrientationEvent?.requestPermission?.().catch(() => {});
+  window.DeviceMotionEvent?.requestPermission?.().catch(() => {});
+  $('#camera-error').hidden = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    stream.getTracks().forEach(t => t.stop());
+    begin();
+  } catch (error) {
+    $('#camera-error').textContent = `Fără cameră nu se poate juca (${error.name || error.message}). Permite camera pentru acest site — pe iPhone: „aA” în bara de adresă → Setări site → Cameră — și apasă din nou.`;
+    $('#camera-error').hidden = false;
+  }
+});
+if (SCREEN || testVideo) begin(); else showScreen('camera-screen');
