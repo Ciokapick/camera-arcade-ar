@@ -293,6 +293,7 @@ function startStageView(v) {
       facing: SEAT[me().color],
       pick: raycaster => pickPawn(raycaster),
       hands: ludoHands,
+      drag: { start: pawnGrab, move: pawnCarry, end: pawnRelease },
       get handsFast() { return myLudoRoll(); },
       update: dt => {
         if (board.update(dt)) settled();
@@ -461,7 +462,8 @@ function handDice(hands, canThrow, onThrow, inPalm) {
   H.votes = wants ? (H.votes ?? 0) + 1 : 0;
   if (H.votes >= 2) { H.closed = !H.closed; H.votes = 0; }
   const at = H.pos.clone();
-  H.track.push({ t: now, p: at.clone() });
+  // urma: poziția brută (netezirea ar înmuia agitatul și ar întârzia viteza aruncării)
+  H.track.push({ t: now, p: raw.clone() });
   while (H.track.length && now - H.track[0].t > 300) H.track.shift();
   if (H.closed) {
     if (H.state !== 'fist') Object.assign(H, { state: 'fist', since: now, shakes: 0, dir: 0 });
@@ -705,7 +707,9 @@ function syncBoard() {
   v.board.setState(state.ludo);
   const self = me(), L = state.ludo;
   const mine = L.phase === 'move' && ludo.current(L) === self.color;
-  v.board.highlight(self.color, mine ? ludo.legalMoves(L, self.color, L.die).map(m => m.pawn) : []);
+  const moves = mine ? ludo.legalMoves(L, self.color, L.die) : [];
+  v.board.highlight(self.color, moves.map(m => m.pawn));
+  if (!v.pawnGrab) v.board.marks(self.color, moves); // cât ții un pion, nu refacem marcajele de sub el
 }
 
 // „Nu te supăra” cu mâna: zarul din palmă (ca la zaruri), iar pionul îl ciupești, îl duci deasupra tablei
@@ -722,30 +726,58 @@ function boardPoint(ray) {
   const t = (TOP_Y + 0.02 - local.y) / dir.y;
   return t > 0 ? local.addScaledVector(dir, t) : null;
 }
+// Pionul îl muți tu: îl apuci (degetul pe ecran sau ciupit cu mâna), îl duci și îl lași pe căsuța colorată.
+// Lăsat în altă parte → se întoarce. Aceleași trei funcții pentru atingere (content.drag) și pentru mână.
+function pawnGrab(ray) {
+  const L = room?.state.ludo, self = me();
+  if (!L || L.phase !== 'move' || ludo.current(L) !== self?.color || view.board.animating || view.pawnGrab) return false;
+  const pawn = view.board.pick(ray, self.color);
+  const move = pawn === null ? null : ludo.legalMoves(L, self.color, L.die).find(m => m.pawn === pawn);
+  if (!move) return false;
+  view.pawnGrab = move;
+  view.board.grab(self.color, pawn);
+  sound.tick();
+  $('#info-small').textContent = 'Du-l pe căsuța colorată și dă-i drumul.';
+  return true;
+}
+function pawnCarry(ray) {
+  if (!view.pawnGrab) return;
+  const point = boardPoint(ray);
+  if (!point) return;
+  const over = view.board.carry(point);
+  if (over !== view.pawnOver) {
+    view.pawnOver = over;
+    if (over) { sound.tick(); vibrate(15); }
+    $('#info-small').textContent = over ? 'Aici! Dă-i drumul.' : 'Du-l pe căsuța colorată și dă-i drumul.';
+  }
+}
+function pawnRelease() {
+  const grab = view.pawnGrab;
+  if (!grab) return;
+  view.pawnGrab = null;
+  view.pawnOver = false;
+  if (view.board.carrying?.over) {
+    view.board.drop();
+    room.dispatch({ type: 'move', pawn: grab.pawn });
+  } else {
+    view.board.cancel();
+    toast('Pune pionul pe căsuța colorată.');
+    renderLudo(room.state, me());
+  }
+}
 function ludoHands(hands) {
   const v = view, L = room?.state.ludo, self = me();
   if (!L || !self) return;
   if (L.phase === 'roll') return handDice(hands, myLudoRoll, ludoThrow, 'Zarul e în palma ta');
-  const mine = L.phase === 'move' && ludo.current(L) === self.color && !v.board.animating;
-  const hand = hands[0];
-  if (!mine) { if (v.pawnGrab) { v.board.cancel(); v.pawnGrab = null; } return; }
-  if (!hand) { if (v.pawnGrab && ++v.pawnLost > 6) { v.board.cancel(); v.pawnGrab = null; } return; }
+  const hand = hands.reduce((best, h) => (!best || h.depth < best.depth ? h : best), null);
+  if (!hand) { if (v.pawnGrab && ++v.pawnLost > 6) pawnRelease(); return; }
   const ray = hand.ray(hand.mid(4, 8));
   if (hand.pinch) {
     v.pawnLost = 0;
-    if (!v.pawnGrab) {
-      const pawn = v.board.pick(ray, self.color);
-      const move = pawn === null ? null : ludo.legalMoves(L, self.color, L.die).find(m => m.pawn === pawn);
-      if (move) { v.pawnGrab = move; v.board.grab(self.color, pawn, move.to); sound.tick(); $('#info-small').textContent = 'Du-l pe inelul verde și desfă degetele.'; }
-    } else {
-      const point = boardPoint(ray);
-      if (point) v.board.carry(point);
-    }
+    if (!v.pawnGrab) pawnGrab(ray);
+    else pawnCarry(ray);
   } else if (v.pawnGrab && ++v.pawnLost >= 3) {
-    const { pawn } = v.pawnGrab;
-    v.pawnGrab = null;
-    v.board.drop();
-    room.dispatch({ type: 'move', pawn });
+    pawnRelease();
   }
 }
 
@@ -779,7 +811,7 @@ function renderLudo(state, self) {
     $('#info-big').textContent = mine ? 'E rândul tău' : `${current?.name ?? ''} e la rând`;
     $('#info-small').textContent = capture + (L.phase === 'roll'
       ? (mine ? (L.tries === 2 ? 'Mai ai 2 încercări să dai 6. ' : L.tries === 1 ? 'Mai ai o încercare să dai 6. ' : '') + (view.mode === 'screen' ? 'Dă cu zarul.' : 'Arată palma: zarul îți apare în mână.') : `${current?.name ?? ''} dă cu zarul…`)
-      : (mine ? (view.mode === 'screen' ? `Ai dat ${L.die}. Alege pionul — atinge-l pe tablă sau mai jos.` : `Ai dat ${L.die}. Ciupește un pion cu inel verde și du-l pe tablă.`) : `${current?.name ?? ''} a dat ${L.die} și mută…`));
+      : (mine ? (view.mode === 'screen' ? `Ai dat ${L.die}. Trage un pion cu degetul pe căsuța colorată.` : `Ai dat ${L.die}. Ia un pion (cu degetul pe ecran sau ciupit cu mâna) și du-l pe căsuța colorată.`) : `${current?.name ?? ''} a dat ${L.die} și mută…`));
   }
   const moves = mine && L.phase === 'move' ? ludo.legalMoves(L, color, L.die) : [];
   $('#pawn-buttons').innerHTML = moves.map(m => `<button class="btn" data-pawn="${m.pawn}">Pionul ${m.pawn + 1}${m.from === ludo.YARD ? ' · iese' : m.to >= ludo.TRACK ? ' · la final' : ''}</button>`).join('');

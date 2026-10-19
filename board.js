@@ -141,42 +141,73 @@ export function createBoard() {
     return cells;
   }
 
-  // unde ajunge pionul dus cu mâna: un inel verde pe căsuța de destinație
-  const target = new THREE.Mesh(new THREE.RingGeometry(0.008, 0.012, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xc9ff4a, transparent: true, opacity: 0.8, depthWrite: false }));
-  target.visible = false;
-  group.add(target);
-  let carried = null; // { pawn, color, index }
+  // Marcajele mutărilor: pe fiecare căsuță unde poate ajunge un pion al tău, un disc alb care pulsează, un contur
+  // în culoarea ta și un val care se lărgește (se vede și pe căsuțele colorate). Când apuci un pion, rămâne doar
+  // destinația lui; devine verde când pionul e deasupra ei.
+  const markGeometry = new THREE.CircleGeometry(CELL * 0.4, 32).rotateX(-Math.PI / 2);
+  const markRing = new THREE.RingGeometry(CELL * 0.4, CELL * 0.56, 32).rotateX(-Math.PI / 2);
+  const waveRing = new THREE.RingGeometry(CELL * 0.5, CELL * 0.58, 40).rotateX(-Math.PI / 2);
+  const marks = []; // { disc, ring, index, pos }
+  let carried = null; // { pawn, color, index, mark }
+  const SNAP = CELL * 0.9; // cât de aproape de căsuță trebuie lăsat pionul
+  function showMarks(color, moves) {
+    marks.forEach(m => { group.remove(m.disc, m.ring); });
+    marks.length = 0;
+    for (const { pawn, to } of moves) {
+      const pos = cellPos(pawnCell(color, pawn, to));
+      // doi pioni pot avea aceeași destinație: un singur marcaj
+      if (marks.some(m => m.pos.distanceTo(pos) < 1e-6)) { marks.find(m => m.pos.distanceTo(pos) < 1e-6).indices.push(pawn); continue; }
+      const disc = new THREE.Mesh(markGeometry, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }));
+      const ring = new THREE.Mesh(markRing, new THREE.MeshBasicMaterial({ color: HEX[color], depthWrite: false }));
+      const wave = new THREE.Mesh(waveRing, new THREE.MeshBasicMaterial({ color: HEX[color], transparent: true, opacity: 0.8, depthWrite: false }));
+      disc.position.copy(pos).setY(TOP + 0.0007);
+      ring.position.copy(pos).setY(TOP + 0.0008);
+      wave.position.copy(pos).setY(TOP + 0.0009);
+      ring.add(wave);
+      wave.position.set(0, 0.0001, 0);
+      group.add(disc, ring);
+      marks.push({ disc, ring, wave, indices: [pawn], pos });
+    }
+  }
+  const markOf = index => marks.find(m => m.indices.includes(index));
 
   let time = 0;
   return {
     group,
     dice,
-    // apuci pionul `index` (cu mâna): se ridică și urmărește mâna; inelul arată căsuța `to`
-    grab(color, index, to) {
+    // unde poți muta (moves: [{ pawn, to }] din ludo.legalMoves), sau [] ca să le ascunzi
+    marks: (color, moves) => showMarks(color, moves),
+    // apuci pionul `index` (cu degetul pe ecran sau ciupit cu mâna): se ridică; rămâne doar marcajul lui
+    grab(color, index) {
       const pawn = pawns[color]?.[index];
       if (!pawn) return;
-      carried = { pawn, color, index };
-      target.position.copy(cellPos(pawnCell(color, index, to))).setY(TOP + 0.0008);
-      target.visible = true;
+      carried = { pawn, color, index, mark: markOf(index) };
+      marks.forEach(m => { m.disc.visible = m.ring.visible = m === carried.mark; });
     },
-    // mută pionul ținut deasupra punctului (local) de pe tablă
+    // pionul ținut deasupra punctului (local); întoarce true dacă e deasupra căsuței colorate
     carry(point) {
-      if (carried) carried.pawn.mesh.position.set(point.x, TOP + 0.02, point.z);
+      if (!carried) return false;
+      carried.pawn.mesh.position.set(point.x, TOP + 0.02, point.z);
+      const over = !!carried.mark && Math.hypot(point.x - carried.mark.pos.x, point.z - carried.mark.pos.z) < SNAP;
+      carried.mark?.disc.material.color.set(over ? 0xc9ff4a : 0xffffff);
+      carried.over = over;
+      return over;
     },
-    // i-ai dat drumul: mutarea vine din stare; pionul sare direct pe căsuța nouă (nu refacem drumul pas cu pas)
+    get carrying() { return carried ? { index: carried.index, over: !!carried.over } : null; },
+    // l-ai lăsat pe căsuța colorată: mutarea vine din stare; pionul sare direct acolo (nu refacem drumul)
     drop() {
       if (!carried) return;
       carried.pawn.direct = true;
       carried = null;
-      target.visible = false;
+      showMarks(null, []);
     },
-    // renunți (mâna a ieșit din cadru): pionul se întoarce la locul lui
+    // l-ai lăsat în altă parte (sau mâna a ieșit din cadru): pionul se întoarce, marcajele revin
     cancel() {
       if (!carried) return;
       const { pawn, color, index } = carried;
       pawn.mesh.position.copy(cellPos(pawnCell(color, index, pawn.progress)));
       carried = null;
-      target.visible = false;
+      marks.forEach(m => { m.disc.visible = m.ring.visible = true; m.disc.material.color.set(0xffffff); });
     },
     // aduce pionii la starea din joc; mutările noi se animă pas cu pas
     setState(ludo) {
@@ -225,6 +256,13 @@ export function createBoard() {
           if (pawn.ring.visible && !target) pawn.mesh.position.y = TOP + 0.004 + Math.sin(time * 6) * 0.003;
           else if (!target) pawn.mesh.position.y = TOP;
         }
+      }
+      // marcajele pulsează ușor
+      for (const m of marks) {
+        m.disc.material.opacity = 0.5 + Math.sin(time * 5) * 0.25;
+        const k = (time * 0.9) % 1; // valul: crește de la căsuță în afară și se stinge
+        m.wave.scale.setScalar(1 + k * 1.2);
+        m.wave.material.opacity = 0.8 * (1 - k);
       }
       return dice.update(dt);
     },
