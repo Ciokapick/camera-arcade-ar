@@ -8,7 +8,7 @@
 // facing?: direcția (locală) care trebuie să fie spre jucător, footprint: raza zonei ocupate,
 // hands?(list): mâinile reale din cameră (doar slam și marker — WebXR nu dă acces la imaginea camerei) }.
 import * as THREE from 'three';
-import { loadHandTracker, classify } from './hands.js';
+import { loadHandTracker, classify, openness } from './hands.js';
 
 // AlvaAR, GPL-3.0 (github.com/alanross/AlvaAR), fixat pe commit; WASM-ul e inclus în fișier (~4 MB)
 const ALVA_URL = 'https://cdn.jsdelivr.net/gh/alanross/AlvaAR@7796af500ee92001ac2a9888363ff64d7a3bee75/examples/public/assets/alva_ar.js';
@@ -124,20 +124,22 @@ export function makeHand(landmarks, { width, height, focal, camera, metersToWorl
   return {
     landmarks,
     gesture: classify(landmarks),
+    open: openness(landmarks, width / height),
     depth,
     // degetul mare lipit de arătător (relativ la mărimea palmei)
     pinch: dist2(landmarks[4], landmarks[8], width, height) < dist2(landmarks[5], landmarks[17], width, height) * 0.55,
     mid: (a, b) => ({ x: (landmarks[a].x + landmarks[b].x) / 2, y: (landmarks[a].y + landmarks[b].y) / 2 }),
-    palm: () => ({ x: (landmarks[0].x + landmarks[9].x) / 2, y: (landmarks[0].y + landmarks[9].y) / 2 }),
+    // centrul palmei: media încheieturii și a bazelor celor 4 degete
+    palm: () => ({ x: [0, 5, 9, 13, 17].reduce((s, i) => s + landmarks[i].x, 0) / 5, y: [0, 5, 9, 13, 17].reduce((s, i) => s + landmarks[i].y, 0) / 5 }),
     ray(p) {
       const q = at(p), r = new THREE.Raycaster();
       r.setFromCamera(new THREE.Vector2(q.x * 2 - 1, 1 - q.y * 2), camera);
       return r;
     },
-    // poziția 3D aproximativă (în lume) a unui reper: pe raza lui, la distanța estimată
-    world(p) {
+    // poziția 3D aproximativă (în lume) a unui reper: pe raza lui, la distanța estimată (minus `nearer` metri, spre cameră)
+    world(p, nearer = 0) {
       const r = this.ray(p).ray;
-      return r.origin.clone().addScaledVector(r.direction, depth * metersToWorld);
+      return r.origin.clone().addScaledVector(r.direction, (depth - nearer) * metersToWorld);
     },
   };
 }
@@ -164,9 +166,22 @@ function handTracking(source, camera, focal, content) {
     },
   };
 }
-// puncte mici pe vârful degetelor mare și arătător (verzi când le ții lipite) — ca să vezi că te vede
-function drawHandHints(ctx, hands) {
+// puncte mici pe vârful degetelor mare și arătător (verzi când le ții lipite) — ca să vezi că te vede.
+// Cu zarul în mână (content.handsFast) și conturul palmei: verde = deschisă, portocaliu = pumn.
+const PALM = [0, 1, 5, 9, 13, 17];
+function drawHandHints(ctx, hands, palms = false) {
   for (const hand of hands) {
+    if (palms) {
+      ctx.beginPath();
+      PALM.forEach((i, k) => ctx[k ? 'lineTo' : 'moveTo'](hand.landmarks[i].x * ctx.canvas.width, hand.landmarks[i].y * ctx.canvas.height));
+      ctx.closePath();
+      const closed = hand.open < 1.4;
+      ctx.fillStyle = closed ? 'rgba(251, 146, 60, .35)' : 'rgba(201, 255, 74, .3)';
+      ctx.strokeStyle = closed ? '#fb923c' : '#c9ff4a';
+      ctx.lineWidth = 3;
+      ctx.fill();
+      ctx.stroke();
+    }
     for (const i of [4, 8]) {
       const p = hand.landmarks[i];
       ctx.beginPath();
@@ -516,9 +531,9 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       else if (state === 'placed') status('');
     }
     if (pose && state === 'placed') status('');
-    // mâinile: din 2 în 2 cadre (pe telefon tracking-ul + mâinile deodată sunt grele)
-    if (handsTracking && state === 'placed' && frameCount % 2 === 0) lastHands = handsTracking.frame();
-    if (state === 'placed') drawHandHints(ctx, lastHands);
+    // mâinile: din 2 în 2 cadre (pe telefon tracking-ul + mâinile deodată sunt grele); cu zarul în mână, la fiecare
+    if (handsTracking && state === 'placed' && (content.handsFast || frameCount % 2 === 0)) lastHands = handsTracking.frame();
+    if (state === 'placed') drawHandHints(ctx, lastHands, content.handsFast);
     content.update(dt);
     renderer.render(scene, camera);
   }
@@ -638,8 +653,8 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
     anchor.visible = visible;
     go(visible ? 'placed' : 'scanning');
     status(visible ? '' : 'Caut markerul… ține-l întreg în cadru.');
-    if (handsTracking && visible && frameCount % 2 === 0) lastHands = handsTracking.frame();
-    if (visible) drawHandHints(ctx, lastHands);
+    if (handsTracking && visible && (content.handsFast || frameCount % 2 === 0)) lastHands = handsTracking.frame();
+    if (visible) drawHandHints(ctx, lastHands, content.handsFast);
     content.update(dt);
     renderer.render(scene, camera);
   }

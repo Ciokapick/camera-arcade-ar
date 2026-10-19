@@ -16,6 +16,15 @@ export function classify(landmarks) {
   return null;
 }
 
+// Cât de deschisă e mâna: media pe cele 4 degete a (vârf → încheietură) / (baza degetului → încheietură), în 3D
+// (MediaPipe dă și z, pe aceeași scară cu x), deci merge și cu palma înclinată. ~0.8–1.1 = pumn, ~1.8–2.1 = palmă.
+// aspect = lățime / înălțime a imaginii (x și y sunt normalizate separat).
+export function openness(landmarks, aspect = 1) {
+  const d = (a, b) => Math.hypot((a.x - b.x) * aspect, a.y - b.y, ((a.z ?? 0) - (b.z ?? 0)) * aspect);
+  const wrist = landmarks[0];
+  return [[8, 5], [12, 9], [16, 13], [20, 17]].reduce((sum, [tip, base]) => sum + d(landmarks[tip], wrist) / d(landmarks[base], wrist), 0) / 4;
+}
+
 let vision;
 const trackers = {};
 // GPU e mai rapid; pe unele iPhone-uri nu pornește sau dă erori la detecție — atunci trecem pe CPU
