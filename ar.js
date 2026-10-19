@@ -174,6 +174,27 @@ function handTracking(source, camera, focal, content) {
 // linii groase + palma — și o desenăm pe un strat deasupra scenei 3D. Ce ții în mână (zarul, pionul, piesa) rămâne
 // în față: content.holes() → [{ world, radius (m) }] = găuri în siluetă acolo unde e obiectul.
 const BONES = [[0, 1, 2, 3, 4], [0, 5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [0, 17, 18, 19, 20], [5, 9, 13, 17]];
+// silueta mâinilor pe ctx: oasele degetelor ca linii groase (thickness × lățimea palmei) + palma
+function paintHands(ctx, hands, color, thickness = 0.32) {
+  const { width, height } = ctx.canvas;
+  ctx.save();
+  ctx.fillStyle = ctx.strokeStyle = color;
+  ctx.lineCap = ctx.lineJoin = 'round';
+  for (const hand of hands) {
+    const p = i => [hand.landmarks[i].x * width, hand.landmarks[i].y * height];
+    ctx.lineWidth = Math.hypot(p(5)[0] - p(17)[0], p(5)[1] - p(17)[1]) * thickness;
+    for (const chain of BONES) {
+      ctx.beginPath();
+      chain.forEach((i, k) => ctx[k ? 'lineTo' : 'moveTo'](...p(i)));
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    [0, 1, 2, 5, 9, 13, 17].forEach((i, k) => ctx[k ? 'lineTo' : 'moveTo'](...p(i)));
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
 export function handOcclusion(root, width, height) {
   const layer = document.createElement('canvas');
   layer.width = width;
@@ -193,22 +214,7 @@ export function handOcclusion(root, width, height) {
       ctx.clearRect(0, 0, width, height);
       if (!hands.length) return;
       m.clearRect(0, 0, width, height);
-      m.fillStyle = m.strokeStyle = '#fff';
-      m.lineCap = m.lineJoin = 'round';
-      for (const hand of hands) {
-        const p = i => [hand.landmarks[i].x * width, hand.landmarks[i].y * height];
-        const palmWidth = Math.hypot(p(5)[0] - p(17)[0], p(5)[1] - p(17)[1]);
-        m.lineWidth = palmWidth * 0.32; // grosimea unui deget
-        for (const chain of BONES) {
-          m.beginPath();
-          chain.forEach((i, k) => m[k ? 'lineTo' : 'moveTo'](...p(i)));
-          m.stroke();
-        }
-        m.beginPath();
-        [0, 1, 2, 5, 9, 13, 17].forEach((i, k) => m[k ? 'lineTo' : 'moveTo'](...p(i)));
-        m.closePath();
-        m.fill();
-      }
+      paintHands(m, hands, '#fff'); // grosimea unui deget ≈ 0,32 × lățimea palmei
       // găurile: obiectele ținute în mână rămân în fața degetelor
       m.globalCompositeOperation = 'destination-out';
       const scale = content.group.getWorldScale(new THREE.Vector3()).x;
@@ -544,6 +550,11 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
 
   const handsTracking = handTracking(canvas, camera, L.focal, content);
   const occlusion = handsTracking && handOcclusion(root, L.w, L.h);
+  const slamCanvas = document.createElement('canvas');
+  slamCanvas.width = L.w;
+  slamCanvas.height = L.h;
+  const slamCtx = slamCanvas.getContext('2d', { willReadFrequently: true });
+  const smoothQ = new THREE.Quaternion(), smoothP = new THREE.Vector3();
   const offTap = tapHandler(root, camera, content, world, onTap, event => {
     if (state === 'scanning') { status('Încă nu am găsit masa — mișcă telefonul încet, cu masa în cadru.'); return false; }
     if (state === 'found') {
@@ -568,12 +579,22 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
     last = time;
     frameCount += 1;
     ctx.drawImage(video, L.dx, L.dy, L.vw * L.cover, L.vh * L.cover);
-    const pose = alva.findCameraPose(ctx.getImageData(0, 0, L.w, L.h));
+    // mâna nu e parte din masă: o acoperim în copia pe care o vede tracking-ul, altfel „trage” tabla după ea
+    let input = ctx;
+    if (lastHands.length) {
+      slamCtx.drawImage(canvas, 0, 0);
+      paintHands(slamCtx, lastHands, '#7f7f7f', 0.6);
+      input = slamCtx;
+    }
+    const pose = alva.findCameraPose(input.getImageData(0, 0, L.w, L.h));
     stats.frames += 1;
     if (pose) {
       stats.poses += 1;
       everTracked = true;
-      applyAlvaPose(pose, camera.quaternion, camera.position);
+      applyAlvaPose(pose, smoothQ, smoothP);
+      // netezim puțin tremuratul (o urmărire perfectă la fiecare cadru nu există); un salt mare = imediat
+      if (camera.position.distanceTo(smoothP) > 0.3 * Math.max(0.01, camera.position.distanceTo(anchor.position))) { camera.position.copy(smoothP); camera.quaternion.copy(smoothQ); }
+      else { camera.position.lerp(smoothP, 0.6); camera.quaternion.slerp(smoothQ, 0.6); }
       if (state === 'scanning' && frameCount % 5 === 0) {
         stats.planeTries += 1;
         const planePose = alva.findPlane();
@@ -720,7 +741,8 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
     const markers = detector.detect(ctx.getImageData(0, 0, L.w, L.h));
     const marker = markers.find(m => m.id === MARKER_ID);
     if (marker) onMarker(marker.corners);
-    const visible = performance.now() - seenAt < 400;
+    // mâna acoperă des markerul când muți un pion: tabla rămâne unde era încă 1,5 s
+    const visible = performance.now() - seenAt < 1500;
     anchor.visible = visible;
     go(visible ? 'placed' : 'scanning');
     status(visible ? '' : 'Caut markerul… ține-l întreg în cadru.');

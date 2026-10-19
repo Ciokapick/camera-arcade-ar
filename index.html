@@ -98,7 +98,7 @@
     /* nume */
     #name-screen, #camera-screen { justify-content: center; }
     #camera-screen .wrap { gap: 14px; }
-    #camera-error { color: var(--bad); }
+    #camera-error, #join-status.error { color: var(--bad); }
     #name-form { gap: 14px; }
 
     /* lobby */
@@ -278,6 +278,7 @@
               <input id="join-code" class="code" maxlength="4" placeholder="COD" autocomplete="off" autocapitalize="characters">
               <button class="btn primary" type="submit">Intră</button>
             </form>
+            <p class="muted" id="join-status" hidden></p>
           </div>
           <div class="card" id="room-online" hidden>
             <p class="muted">Codul camerei</p>

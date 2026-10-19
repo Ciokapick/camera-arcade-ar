@@ -77,7 +77,7 @@ $('#rename').addEventListener('click', askName);
 
 // ---------------------------------------------------------------- camere de joc
 
-async function useRoom(open) {
+async function useRoom(open, onError) {
   const gen = ++roomGen;
   leaveGameView();
   room?.leave();
@@ -90,7 +90,7 @@ async function useRoom(open) {
   } catch (error) {
     console.error(error);
     if (gen !== roomGen) return;
-    toast(error.message || 'Nu am putut intra în cameră');
+    if (onError) onError(error); else toast(error.message || 'Nu am putut intra în cameră');
     startLocal();
   }
 }
@@ -103,14 +103,22 @@ $('#create-room').addEventListener('click', () => {
 $('#join-form').addEventListener('submit', event => {
   event.preventDefault();
   const code = $('#join-code').value.trim().toUpperCase();
-  if (code.length !== 4) return toast('Codul are 4 litere');
-  toast(`Intru în camera ${code}…`);
+  const status = (text, error = false) => { $('#join-status').textContent = text; $('#join-status').hidden = !text; $('#join-status').classList.toggle('error', error); };
+  if (code.length !== 4) return status('Codul are 4 litere.', true);
+  const button = $('#join-form button');
+  button.disabled = true;
+  button.textContent = 'Mă conectez…';
+  status(`Intru în camera ${code}…`);
   useRoom(onState => joinRoom({
     code,
     name: myName,
     onState,
+    onProgress: text => status(text),
     onClose: () => { toast('Gazda a închis camera.'); startLocal(); },
-  }));
+  }), error => status(error.message || 'Nu am putut intra în cameră.', true)).finally(() => {
+    button.disabled = false;
+    button.textContent = 'Intră';
+  });
 });
 $('#leave-room').addEventListener('click', startLocal);
 $('#show-join').addEventListener('click', () => {
@@ -151,8 +159,9 @@ function renderLobby(state, self) {
   $('#room-local').hidden = room.online;
   $('#room-online').hidden = !room.online;
   $('#code-big').textContent = room.code ?? '';
+  if (room.online) { $('#join-status').hidden = true; $('#join-form').hidden = true; }
   $('#room-hint').textContent = room.isHost
-    ? 'Prietenii apasă „Am un cod” și scriu codul ăsta. Tu alegi jocul.'
+    ? 'Prietenii apasă „Intră cu un cod” și scriu codul ăsta. Tu alegi jocul. Ține aplicația deschisă cât intră.'
     : `Gazda (${nameOf(state.hostId)}) alege jocul — intri automat în el.`;
   // jucătorii ca avatare cu inițiala: al tău își schimbă culoarea la atingere; gazda scoate calculatorul atingându-l
   const initial = name => escapeHtml([...String(name).trim()][0]?.toUpperCase() ?? '?');

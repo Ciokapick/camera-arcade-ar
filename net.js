@@ -23,7 +23,7 @@ async function openPeer(id) {
 export async function hostRoom({ name, online, onState }) {
   let state = newRoom({ id: HOST_ID, name });
   const conns = new Map();
-  let peer = null, code = null;
+  let peer = null, code = null, onVisible = null;
 
   function dispatchFrom(action, from) {
     const next = reduce(state, action, from);
@@ -64,6 +64,10 @@ export async function hostRoom({ name, online, onState }) {
     });
     // dacă pică legătura cu serverul de prezentări, conexiunile existente rămân; ne reconectăm pentru alții noi
     peer.on('disconnected', () => !peer.destroyed && peer.reconnect());
+    // pe iPhone, când ieși din Safari (ex.: ca să trimiți codul pe WhatsApp) pagina e suspendată; la întoarcere
+    // ne reconectăm imediat, ca cine intră să ne găsească
+    onVisible = () => { if (document.visibilityState === 'visible' && peer && !peer.destroyed && peer.disconnected) peer.reconnect(); };
+    document.addEventListener('visibilitychange', onVisible);
   }
 
   const memo = {};
@@ -81,25 +85,37 @@ export async function hostRoom({ name, online, onState }) {
     dispatch: action => dispatchFrom(action, HOST_ID),
     leave() {
       clearInterval(timer);
+      if (onVisible) document.removeEventListener('visibilitychange', onVisible);
       peer?.destroy();
     },
   };
 }
 
-export async function joinRoom({ code, name, onState, onClose }) {
+// o încercare de legătură cu gazda; peer-unavailable = codul nu există (sau gazda a ieșit din aplicație)
+function connectOnce(peer, code, ms) {
+  const conn = peer.connect(PREFIX + code, { reliable: true });
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { conn.close(); reject(new Error('timeout')); }, ms);
+    conn.once('open', () => { clearTimeout(timeout); resolve(conn); });
+    peer.once('error', error => { clearTimeout(timeout); reject(error); });
+  });
+}
+
+export async function joinRoom({ code, name, onState, onClose, onProgress = () => {} }) {
   code = String(code).trim().toUpperCase();
   const peer = await openPeer();
-  const conn = peer.connect(PREFIX + code, { reliable: true });
-  let state = null;
+  let state = null, conn;
+  // două încercări: pe date mobile legătura directă poate dura (sau prima cade)
   try {
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error(`Nu găsesc camera ${code}`)), 12000);
-      conn.once('open', () => { clearTimeout(timeout); resolve(); });
-      peer.once('error', error => {
-        clearTimeout(timeout);
-        reject(error.type === 'peer-unavailable' ? new Error(`Camera ${code} nu există`) : error);
+    try {
+      conn = await connectOnce(peer, code, 9000);
+    } catch (error) {
+      if (error.type === 'peer-unavailable') throw new Error(`Nu găsesc camera ${code}. Verifică codul și ca gazda să aibă aplicația deschisă pe ecran.`);
+      onProgress('Mai încerc o dată…');
+      conn = await connectOnce(peer, code, 12000).catch(e => {
+        throw new Error(e.type === 'peer-unavailable' ? `Nu găsesc camera ${code}. Verifică codul și ca gazda să aibă aplicația deschisă pe ecran.` : 'Nu mă pot lega de gazdă. Încercați amândoi pe aceeași rețea Wi-Fi sau pe date mobile.');
       });
-    });
+    }
   } catch (error) {
     peer.destroy();
     throw error;
