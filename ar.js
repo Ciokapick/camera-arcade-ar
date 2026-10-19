@@ -254,11 +254,9 @@ function drawHandHints(ctx, hands, palms = false) {
       ctx.beginPath();
       PALM.forEach((i, k) => ctx[k ? 'lineTo' : 'moveTo'](hand.landmarks[i].x * ctx.canvas.width, hand.landmarks[i].y * ctx.canvas.height));
       ctx.closePath();
-      const closed = hand.open < 1.4;
-      ctx.fillStyle = closed ? 'rgba(251, 146, 60, .35)' : 'rgba(201, 255, 74, .3)';
-      ctx.strokeStyle = closed ? '#fb923c' : '#c9ff4a';
+      // doar conturul (umplut ar colora zarul ținut în palmă)
+      ctx.strokeStyle = hand.open < 1.4 ? '#fb923c' : '#c9ff4a';
       ctx.lineWidth = 3;
-      ctx.fill();
       ctx.stroke();
     }
     for (const i of [4, 8]) {
@@ -546,15 +544,13 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
     facing: { w: 1, x: 0, y: 0, z: 0 },
   });
 
-  // mâinile: 8th Wall ne dă imaginea camerei ca pixeli (întreagă, neîncadrată); pe ecran e „cover”
+  // mâinile: le căutăm exact în imaginea pe care o vezi (canvas-ul desenat de 8th Wall), copiată mic (360 px) —
+  // deci fără grija orientării / încadrării imaginii brute a camerei
   const handCanvas = document.createElement('canvas');
+  handCanvas.width = 360;
+  handCanvas.height = Math.round(360 * H / W);
   const handCtx = handCanvas.getContext('2d', { willReadFrequently: true });
-  let frameRect = [0, 0, W, H], imageData = null;
-  const view = {
-    width: W, height: H,
-    map: p => ({ x: (p.x * frameRect[2] + frameRect[0]) / W, y: (p.y * frameRect[3] + frameRect[1]) / H, z: p.z * frameRect[2] / W }),
-  };
-  const handsTracking = content.hands ? handTracking(handCanvas, camera, () => focal, content, view) : null;
+  const handsTracking = content.hands ? handTracking(handCanvas, camera, () => focal * handCanvas.width / W, content) : null;
   const occlusion = handsTracking && handOcclusion(root, W, H);
   let lastHands = [];
 
@@ -596,7 +592,6 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
     onUpdate: ({ processCpuResult }) => {
       if (closed) return;
       const r = processCpuResult.reality;
-      const px = processCpuResult.camerapixelarray;
       if (r?.intrinsics && Number.isFinite(r.intrinsics[0])) {
         camera.projectionMatrix.fromArray(r.intrinsics);
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
@@ -617,19 +612,6 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
         }
         if (state === 'placed') status(r.trackingStatus === 'LIMITED' ? 'Urmărirea e slabă — mișcă telefonul mai încet, cu masa în cadru.' : '');
       }
-      // pixelii camerei → canvas pentru mână (și pentru silueta ei peste tablă)
-      if (px?.pixels && handsTracking) {
-        if (handCanvas.width !== px.cols || handCanvas.height !== px.rows) {
-          handCanvas.width = px.cols;
-          handCanvas.height = px.rows;
-          imageData = handCtx.createImageData(px.cols, px.rows);
-          const s = Math.max(W / px.cols, H / px.rows);
-          frameRect = [(W - px.cols * s) / 2, (H - px.rows * s) / 2, px.cols * s, px.rows * s];
-        }
-        if (px.rowBytes === px.cols * 4) imageData.data.set(px.pixels);
-        else for (let y = 0; y < px.rows; y++) imageData.data.set(px.pixels.subarray(y * px.rowBytes, y * px.rowBytes + px.cols * 4), y * px.cols * 4);
-        handCtx.putImageData(imageData, 0, 0);
-      }
     },
     onRender: () => {
       if (closed) return;
@@ -637,11 +619,14 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
       last = now;
       frameCount += 1;
       stats.frames += 1;
-      if (handsTracking && state === 'placed' && handCanvas.width && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame();
+      if (handsTracking && state === 'placed' && frameCount % handEvery(content) === 0) {
+        handCtx.drawImage(feed, 0, 0, handCanvas.width, handCanvas.height); // imaginea camerei de pe ecran, abia desenată
+        lastHands = handsTracking.frame();
+      }
       content.update(dt);
       renderer.render(scene, camera);
       if (occlusion) {
-        occlusion.draw(handCanvas, state === 'placed' ? lastHands : [], camera, focal, content, frameRect);
+        occlusion.draw(feed, state === 'placed' ? lastHands : [], camera, focal, content);
         if (state === 'placed') drawHandHints(occlusion.ctx, lastHands, content.handsFast);
       }
     },
@@ -650,7 +635,6 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
   XR8.addCameraPipelineModules([
     XR8.GlTextureRenderer.pipelineModule(),
     XR8.XrController.pipelineModule(),
-    ...(handsTracking ? [XR8.CameraPixelArray.pipelineModule({ maxDimension: 480 })] : []),
     module,
   ]);
   // pornește camera; dacă în 12 s nu vine niciun cadru, lăsăm loc rezervei (AlvaAR)
@@ -661,7 +645,7 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
       onCameraStatusChange: ({ status: s }) => { if (s === 'failed') { clearTimeout(timer); reject(new Error('camera')); } },
       onStart: () => { clearTimeout(timer); setOrigin(); resolve(); },
     });
-    try { XR8.run({ canvas: feed }); } catch (error) { clearTimeout(timer); reject(error); }
+    try { XR8.run({ canvas: feed, glContextConfig: { preserveDrawingBuffer: true } }); } catch (error) { clearTimeout(timer); reject(error); }
   }).catch(error => { closed = true; XR8.stop(); XR8.clearCameraPipelineModules(); offTap(); throw error; });
 
   return {
