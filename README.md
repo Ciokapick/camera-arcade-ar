@@ -31,7 +31,7 @@ Explicat pe larg, pas cu pas: [DOCUMENTATIE.md](DOCUMENTATIE.md).
 | `board.js` | tabla 3D, pionii animați pas cu pas |
 | `jenga.js`, `jenga-view.js` | regulile și stabilitatea turnului / turnul 3D, tragerea și prăbușirea |
 | `xo.js`, `xo-view.js` | regulile și calculatorul / tabla 3×3 |
-| `ar.js` | scena: ecran / WebXR (Android) / AlvaAR SLAM + giroscop (iPhone) / marker ArUco (js-aruco2) |
+| `ar.js` | scena: pe masă cu 8th Wall (rezervă: AlvaAR SLAM + giroscop) / marker ArUco (js-aruco2) / WebXR (`?webxr`) |
 | `hands.js` | recunoașterea mâinilor și a gestului |
 | `ar.js` → `makeHand` | mâna reală în scena AR: raze 3D prin degete, distanța estimată din mărimea palmei, ciupit |
 | `rps-ar.js` | obiectele 3D de la piatră–hârtie–foarfecă și ciocnirea |
@@ -39,7 +39,7 @@ Explicat pe larg, pas cu pas: [DOCUMENTATIE.md](DOCUMENTATIE.md).
 | `banknotes.js`, `banknote-refs.json` | recunoașterea bancnotelor: rețea neuronală (MediaPipe Image Embedder) + cel mai apropiat vecin |
 | `app.js`, `index.html` | interfața (Inter + iconițe Phosphor prin Iconify) |
 
-Biblioteci (din CDN): three.js, cannon-es, PeerJS, MediaPipe Tasks Vision, [AlvaAR](https://github.com/alanross/AlvaAR) (GPL-3.0), js-aruco2.
+Biblioteci (din CDN): three.js, cannon-es, PeerJS, MediaPipe Tasks Vision, [8th Wall Engine](https://github.com/8thwall/engine) © Niantic Spatial (binar gratuit, [licență proprie](https://github.com/8thwall/engine/blob/main/LICENSE) — urmărirea mesei), [AlvaAR](https://github.com/alanross/AlvaAR) (GPL-3.0, rezervă), js-aruco2.
 
 ### Recunoașterea bancnotelor
 
@@ -60,6 +60,7 @@ Regulile tuturor jocurilor, camera de joc (inclusiv partide întregi jucate de c
 - `?fov=70` — câmpul vizual al camerei pe latura lungă, în grade (implicit 67, camera principală de telefon)
 - `?dist=0.35` — distanța presupusă telefon → masă în modul „Pe masa mea”, în metri (scara)
 - `?marker=0.15` — latura pătratului negru al markerului printat, în metri
+- `?alva` — urmărirea mesei cu AlvaAR în loc de 8th Wall
 - `?screen` — vedere 3D fără cameră (doar pentru dezvoltare și teste; nu apare în aplicație)
 - `?test-video=/cale/video.mp4` — rulează AR-ul / PHF pe un video înregistrat în loc de cameră (pentru teste)
 

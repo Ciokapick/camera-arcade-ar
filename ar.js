@@ -10,7 +10,10 @@
 import * as THREE from 'three';
 import { loadHandTracker, classify, openness } from './hands.js';
 
-// AlvaAR, GPL-3.0 (github.com/alanross/AlvaAR), fixat pe commit; WASM-ul e inclus în fișier (~4 MB)
+// 8th Wall Engine (Niantic Spatial) — urmărirea mesei principală: SLAM testat ani de zile în Safari pe iPhone.
+// Binarul e gratuit, cu licență proprie (nu open source): github.com/8thwall/engine/blob/main/LICENSE
+const XR8_URL = 'https://cdn.jsdelivr.net/npm/@8thwall/engine-binary@1.0.0/dist/xr.js';
+// AlvaAR, GPL-3.0 (github.com/alanross/AlvaAR), fixat pe commit; WASM-ul e inclus în fișier (~4 MB) — rezervă
 const ALVA_URL = 'https://cdn.jsdelivr.net/gh/alanross/AlvaAR@7796af500ee92001ac2a9888363ff64d7a3bee75/examples/public/assets/alva_ar.js';
 // js-aruco2 (MIT): detecție markeri ArUco + POSIT pentru poziția 3D
 const ARUCO_BASE = 'https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/';
@@ -149,7 +152,9 @@ export function makeHand(landmarks, { width, height, focal, camera, metersToWorl
 const handEvery = content => (content.handsFast ? 1 : content.handsActive === false ? 4 : 2);
 
 // Rulează detecția pe `source` (canvas) cât timp scena e deschisă; dă conținutului mâinile. null dacă nu le vrea.
-function handTracking(source, camera, focal, content) {
+// view (opțional): { width, height, map(p) } — când `source` nu e încadrat ca ecranul, reperele se mută în
+// coordonatele ecranului (map), iar mâna se calculează pe dimensiunile ecranului.
+function handTracking(source, camera, focal, content, view = null) {
   if (!content.hands) return null;
   let tracker = null, stamp = 0, failed = false;
   loadHandTracker('GPU', 1).catch(() => loadHandTracker('CPU', 1)).then(t => { tracker = t; }, error => { console.warn(error); failed = true; });
@@ -164,7 +169,10 @@ function handTracking(source, camera, focal, content) {
       let result;
       try { result = tracker.detectForVideo(source, stamp); } catch (error) { console.warn(error); return []; }
       content.group.getWorldScale(scale);
-      const hands = (result.landmarks || []).map(l => makeHand(l, { width: source.width, height: source.height, focal, camera, metersToWorld: scale.x }));
+      const f = typeof focal === 'function' ? focal() : focal;
+      const hands = (result.landmarks || []).map(l => (view
+        ? makeHand(l.map(view.map), { width: view.width, height: view.height, focal: f, camera, metersToWorld: scale.x })
+        : makeHand(l, { width: source.width, height: source.height, focal: f, camera, metersToWorld: scale.x })));
       content.hands(hands);
       return hands;
     },
@@ -210,7 +218,7 @@ export function handOcclusion(root, width, height) {
   const v = new THREE.Vector3();
   return {
     ctx,
-    draw(frame, hands, camera, focal, content) {
+    draw(frame, hands, camera, focal, content, rect = [0, 0, width, height]) {
       ctx.clearRect(0, 0, width, height);
       if (!hands.length) return;
       m.clearRect(0, 0, width, height);
@@ -228,7 +236,7 @@ export function handOcclusion(root, width, height) {
       }
       m.globalCompositeOperation = 'source-over';
       // pixelii camerei, doar unde e mâna
-      ctx.drawImage(frame, 0, 0, width, height);
+      ctx.drawImage(frame, ...rect);
       ctx.globalCompositeOperation = 'destination-in';
       ctx.drawImage(mask, 0, 0);
       ctx.globalCompositeOperation = 'source-over';
@@ -276,7 +284,7 @@ export async function openStage({ root, overlay, mode, content, status, setState
   const world = createWorld(content);
   const common = { root, overlay, content, world, status, setState, onTap, videoUrl };
   const stage = mode === 'webxr' ? await startWebXR(common)
-    : mode === 'slam' ? await startSlam(common)
+    : mode === 'slam' ? await startTable(common)
       : mode === 'marker' ? await startMarker(common)
         : startScreen(common);
   stage.mode = mode;
@@ -474,7 +482,212 @@ async function startWebXR({ overlay, content, world, status, setState, onTap }) 
   };
 }
 
-// ---------------------------------------------------------------- slam: iPhone & restul
+// ---------------------------------------------------------------- pe masă: 8th Wall, altfel AlvaAR
+
+// 8th Wall dacă se poate (nu merge pe video de test); dacă nu se încarcă sau dă eroare, AlvaAR. ?alva = forțat AlvaAR.
+async function startTable(common) {
+  if (!common.videoUrl && !params.has('alva')) {
+    try {
+      return await startXR8(common);
+    } catch (error) {
+      console.warn('8th Wall nu a pornit, trec pe AlvaAR', error);
+      common.root.replaceChildren();
+    }
+  }
+  return startSlam(common);
+}
+
+let xr8Promise = null;
+function loadXR8() {
+  xr8Promise ??= new Promise((resolve, reject) => {
+    if (window.XR8) return resolve(window.XR8);
+    const script = document.createElement('script');
+    script.src = XR8_URL;
+    script.dataset.preloadChunks = 'slam';
+    script.onerror = () => reject(new Error('8th Wall nu s-a încărcat'));
+    addEventListener('xrloaded', () => resolve(window.XR8), { once: true });
+    setTimeout(() => reject(new Error('8th Wall: timeout')), 30000);
+    document.head.append(script);
+  }).catch(error => { xr8Promise = null; throw error; });
+  return xr8Promise;
+}
+
+async function startXR8({ root, content, world, status, setState, onTap }) {
+  status('Încarc motorul de tracking (8th Wall)…');
+  const XR8 = await loadXR8();
+  await XR8.loadChunk?.('slam');
+  const W = root.clientWidth, H = root.clientHeight, dpr = Math.min(devicePixelRatio, 2);
+  // stratul cu imaginea camerei (îl desenează 8th Wall) și deasupra scena noastră
+  const feed = document.createElement('canvas');
+  feed.width = Math.round(W * dpr);
+  feed.height = Math.round(H * dpr);
+  feed.className = 'stage-layer';
+  const renderer = makeRenderer(W, H, true);
+  renderer.domElement.className = 'stage-layer';
+  root.append(feed, renderer.domElement);
+  const { scene, anchor, reticle, setScale } = world;
+  const camera = new THREE.PerspectiveCamera(60, W / H, 0.01, 1000);
+  scene.add(camera);
+  anchor.visible = false;
+  content.group.visible = false;
+  setScale(1);
+
+  let state = 'scanning', frameCount = 0, last = 0, closed = false, focal = H, failed = null;
+  const stats = { frames: 0, poses: 0, engine: 'xr8' };
+  const go = next => { state = next; setState(next); };
+  go('scanning');
+  status('Îndreaptă camera spre masă și mișc-o puțin…');
+
+  // „Pământul” lui 8th Wall (y = 0) e masa: pornim camera la ~45 cm deasupra ei, deci unitățile ≈ metri
+  XR8.XrController.configure({ scale: 'responsive', disableWorldTracking: false });
+  const setOrigin = () => XR8.XrController.updateCameraProjectionMatrix({
+    cam: { pixelRectWidth: feed.width, pixelRectHeight: feed.height, nearClipPlane: 0.01, farClipPlane: 1000 },
+    origin: { x: 0, y: ASSUMED_DISTANCE, z: 0 },
+    facing: { w: 1, x: 0, y: 0, z: 0 },
+  });
+
+  // mâinile: 8th Wall ne dă imaginea camerei ca pixeli (întreagă, neîncadrată); pe ecran e „cover”
+  const handCanvas = document.createElement('canvas');
+  const handCtx = handCanvas.getContext('2d', { willReadFrequently: true });
+  let frameRect = [0, 0, W, H], imageData = null;
+  const view = {
+    width: W, height: H,
+    map: p => ({ x: (p.x * frameRect[2] + frameRect[0]) / W, y: (p.y * frameRect[3] + frameRect[1]) / H, z: p.z * frameRect[2] / W }),
+  };
+  const handsTracking = content.hands ? handTracking(handCanvas, camera, () => focal, content, view) : null;
+  const occlusion = handsTracking && handOcclusion(root, W, H);
+  let lastHands = [];
+
+  // punctul de pe masă de sub (x, y) ∈ [0, 1]: suprafața găsită de 8th Wall, altfel planul y = 0 (masa)
+  const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), ray = new THREE.Raycaster();
+  const hitAt = (x, y) => {
+    const hits = XR8.XrController.hitTest(x, y, ['FEATURE_POINT', 'ESTIMATED_SURFACE', 'DETECTED_SURFACE']);
+    const hit = hits.find(h => h.type === 'DETECTED_SURFACE') ?? hits.find(h => h.type === 'ESTIMATED_SURFACE');
+    if (hit && Number.isFinite(hit.position.x)) return new THREE.Vector3(hit.position.x, hit.position.y, hit.position.z);
+    ray.setFromCamera(new THREE.Vector2(x * 2 - 1, 1 - y * 2), camera);
+    return ray.ray.intersectPlane(tablePlane, new THREE.Vector3());
+  };
+  const place = point => {
+    anchor.position.copy(point);
+    anchor.quaternion.identity(); // masa = planul y = 0 al lui 8th Wall
+    reticle.visible = false;
+    content.group.visible = true;
+    anchor.visible = true;
+    anchor.updateMatrixWorld(true);
+    faceCamera(content, camera.position);
+    go('placed');
+    status('');
+  };
+
+  const offTap = tapHandler(root, camera, content, world, onTap, event => {
+    if (state === 'scanning') { status('Încă pornesc urmărirea — mișcă puțin telefonul, cu masa în cadru.'); return false; }
+    if (state === 'found') {
+      const rect = root.getBoundingClientRect();
+      const point = hitAt((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height) ?? anchor.position.clone();
+      place(point);
+      return false;
+    }
+    return true;
+  }, () => state === 'placed');
+
+  const module = {
+    name: 'camera-arcade',
+    onException: error => { console.warn('8th Wall', error); failed = error; },
+    onUpdate: ({ processCpuResult }) => {
+      if (closed) return;
+      const r = processCpuResult.reality;
+      const px = processCpuResult.camerapixelarray;
+      if (r?.intrinsics && Number.isFinite(r.intrinsics[0])) {
+        camera.projectionMatrix.fromArray(r.intrinsics);
+        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+        focal = r.intrinsics[5] * H / 2;
+        camera.position.set(r.position.x, r.position.y, r.position.z);
+        camera.quaternion.set(r.rotation.x, r.rotation.y, r.rotation.z, r.rotation.w);
+        camera.updateMatrixWorld(true);
+        stats.poses += 1;
+        if (state === 'scanning' && r.trackingStatus === 'NORMAL') {
+          go('found');
+          reticle.visible = true;
+          anchor.visible = true;
+          status('Atinge masa unde vrei să pui jocul.');
+        }
+        if (state === 'found') {
+          const point = hitAt(0.5, 0.55);
+          if (point) { anchor.position.copy(point); anchor.quaternion.identity(); }
+        }
+        if (state === 'placed') status(r.trackingStatus === 'LIMITED' ? 'Urmărirea e slabă — mișcă telefonul mai încet, cu masa în cadru.' : '');
+      }
+      // pixelii camerei → canvas pentru mână (și pentru silueta ei peste tablă)
+      if (px?.pixels && handsTracking) {
+        if (handCanvas.width !== px.cols || handCanvas.height !== px.rows) {
+          handCanvas.width = px.cols;
+          handCanvas.height = px.rows;
+          imageData = handCtx.createImageData(px.cols, px.rows);
+          const s = Math.max(W / px.cols, H / px.rows);
+          frameRect = [(W - px.cols * s) / 2, (H - px.rows * s) / 2, px.cols * s, px.rows * s];
+        }
+        if (px.rowBytes === px.cols * 4) imageData.data.set(px.pixels);
+        else for (let y = 0; y < px.rows; y++) imageData.data.set(px.pixels.subarray(y * px.rowBytes, y * px.rowBytes + px.cols * 4), y * px.cols * 4);
+        handCtx.putImageData(imageData, 0, 0);
+      }
+    },
+    onRender: () => {
+      if (closed) return;
+      const now = performance.now(), dt = last ? Math.min((now - last) / 1000, 0.05) : 1 / 60;
+      last = now;
+      frameCount += 1;
+      stats.frames += 1;
+      if (handsTracking && state === 'placed' && handCanvas.width && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame();
+      content.update(dt);
+      renderer.render(scene, camera);
+      if (occlusion) {
+        occlusion.draw(handCanvas, state === 'placed' ? lastHands : [], camera, focal, content, frameRect);
+        if (state === 'placed') drawHandHints(occlusion.ctx, lastHands, content.handsFast);
+      }
+    },
+  };
+  XR8.clearCameraPipelineModules();
+  XR8.addCameraPipelineModules([
+    XR8.GlTextureRenderer.pipelineModule(),
+    XR8.XrController.pipelineModule(),
+    ...(handsTracking ? [XR8.CameraPixelArray.pipelineModule({ maxDimension: 480 })] : []),
+    module,
+  ]);
+  // pornește camera; dacă în 12 s nu vine niciun cadru, lăsăm loc rezervei (AlvaAR)
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('8th Wall nu a pornit camera')), 12000);
+    XR8.addCameraPipelineModule({
+      name: 'camera-arcade-start',
+      onCameraStatusChange: ({ status: s }) => { if (s === 'failed') { clearTimeout(timer); reject(new Error('camera')); } },
+      onStart: () => { clearTimeout(timer); setOrigin(); resolve(); },
+    });
+    try { XR8.run({ canvas: feed }); } catch (error) { clearTimeout(timer); reject(error); }
+  }).catch(error => { closed = true; XR8.stop(); XR8.clearCameraPipelineModules(); offTap(); throw error; });
+
+  return {
+    camera,
+    stats,
+    get state() { return state; },
+    get failed() { return failed; },
+    cameraLocal: () => content.group.worldToLocal(camera.position.clone()),
+    replace() { content.group.visible = false; reticle.visible = true; go('found'); status('Atinge masa unde vrei să pui jocul.'); },
+    // pe iPhone nu merg două camere deodată (ex.: pariul cu bancnote): oprim 8th Wall cât e nevoie
+    pause() { XR8.pause(); },
+    resume() { XR8.resume(); },
+    close() {
+      closed = true;
+      offTap();
+      XR8.stop();
+      XR8.clearCameraPipelineModules();
+      occlusion?.remove();
+      feed.remove();
+      renderer.domElement.remove();
+      renderer.dispose();
+    },
+  };
+}
+
+// ---------------------------------------------------------------- slam: AlvaAR (rezervă)
 
 // Același mapping ca AlvaARConnectorTHREE din exemplele AlvaAR
 function applyAlvaPose(pose, quaternion, position) {

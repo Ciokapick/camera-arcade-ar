@@ -632,8 +632,10 @@ async function openBetSheet() {
   banknotes.preload().catch(error => console.warn(error));
   const video = $('#bet-video');
   try {
-    // pe iPhone nu merg două camere deodată: folosim fluxul camerei scenei, dacă e pornită
+    // pe iPhone nu merg două camere deodată: folosim fluxul camerei scenei, dacă e pornită; 8th Wall își
+    // ține camera pentru el, așa că îl punem pe pauză cât pui banii
     const shared = view?.stage?.video?.srcObject;
+    if (!shared) view?.stage?.pause?.();
     if (shared) video.srcObject = shared;
     else if (testVideo) { video.src = testVideo; video.loop = true; } else {
       bet.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
@@ -653,6 +655,7 @@ async function openBetSheet() {
 }
 function closeBetSheet() {
   if (!bet) return;
+  view?.stage?.resume?.();
   clearTimeout(bet.timer);
   bet.stream?.getTracks().forEach(t => t.stop());
   const video = $('#bet-video');

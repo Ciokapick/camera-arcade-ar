@@ -135,10 +135,19 @@ Toate jocurile sunt construite „în metri”, cu masa la înălțimea 0. `ar.j
 |---|---|---|
 | **Pe ecran** (`?screen`) | doar pentru dezvoltare și teste | nu folosește camera; scenă 3D pe fundal închis. În aplicație nu mai apare: jocurile merg doar cu camera |
 | **WebXR** | Chrome pe Android | telefonul (ARCore) găsește singur suprafețele: *hit-test* |
-| **SLAM** | iPhone și restul | AlvaAR urmărește puncte din imagine și calculează mișcarea telefonului |
+| **Pe masă — 8th Wall** | iPhone, Android | motorul 8th Wall (Niantic Spatial): SLAM testat ani de zile în Safari pe iPhone; ne dă poziția telefonului și imaginea camerei |
+| **Pe masă — AlvaAR** (rezervă) | dacă 8th Wall nu se încarcă, sau `?alva` | AlvaAR urmărește puncte din imagine și calculează mișcarea telefonului |
 | **Marker** | toți cei din aceeași cameră | recunoaște pătratul printat și îi calculează poziția 3D |
 
-### SLAM pe iPhone, explicat
+### De ce 8th Wall (din octombrie 2026)
+
+Cu AlvaAR tabla „urca” și sărea, mai ales cu mâna în cadru. Am căutat alternative care merg în Safari pe iPhone (unde WebXR pentru AR nu există): 8th Wall (folosit ani de zile în campanii WebAR, binarul cu SLAM e gratuit din 2026, cu licență proprie), Zappar (comercial, cu abonament), encantar.js / MindAR / AR.js (doar imagini/markere, fără urmărirea mesei). 8th Wall e singura variantă gratuită și testată pe scară largă.
+
+Cum e legat (`ar.js → startXR8`): 8th Wall desenează imaginea camerei pe un canvas al lui și ne dă, la fiecare cadru, poziția și rotația telefonului plus matricea de proiecție; noi desenăm jocul cu three.js pe un canvas transparent deasupra. „Pământul” lui (y = 0) e masa: pornim camera la 45 cm deasupra, deci unitățile ≈ metri. Atingerea pune jocul cu `hitTest` (sau, dacă nu răspunde, raza din deget intersectată cu planul y = 0). Pentru mână, `CameraPixelArray` ne dă pixelii camerei (480 px), din care MediaPipe găsește mâna; coordonatele se mută din imaginea întreagă în cea tăiată „cover” de pe ecran. La pariul cu bancnote 8th Wall e pus pe pauză (pe iPhone nu merg două camere deodată). Dacă 8th Wall nu pornește în 12 s, trecem singuri pe AlvaAR.
+
+Licența cere să păstrăm mențiunea Niantic Spatial și trimiterea la licență — e în lobby, jos.
+
+### SLAM cu AlvaAR (rezerva), explicat
 
 Safari pe iPhone nu are WebXR, așa că a trebuit făcut „de mână”:
 
