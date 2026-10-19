@@ -255,10 +255,19 @@ function cleanFling(f) {
   const start = vec(f.start), vel = vec(f.vel);
   if (start && vel) {
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-    const r = Math.hypot(start[0], start[2]), k = r > 0.6 ? 0.6 / r : 1;
-    fling.start = [start[0] * k, clamp(start[1], 0.03, 0.5), start[2] * k];
+    // mâna e între telefon și masă: cel mult ~1 m de centrul mesei, cel mult 80 cm deasupra ei
+    const r = Math.hypot(start[0], start[2]), k = r > 1 ? 1 / r : 1;
+    fling.start = [start[0] * k, clamp(start[1], 0.03, 0.8), start[2] * k];
     const speed = Math.hypot(...vel), m = speed > 2 ? 2 / speed : 1;
     fling.vel = vel.map(v => v * m);
+    // fiecare zar cum era în mână: poziție (lângă start) și rotație (normalizată)
+    if (Array.isArray(f.dice) && f.dice.length <= 2) {
+      const dice = f.dice.map(d => ({ p: vec(d?.p), q: Array.isArray(d?.q) && d.q.length === 4 && d.q.every(Number.isFinite) ? d.q.map(Number) : null }));
+      if (dice.every(d => d.p && d.q && Math.hypot(d.p[0] - start[0], d.p[1] - start[1], d.p[2] - start[2]) < 0.1)) {
+        const shift = fling.start.map((v, i) => v - start[i]); // dacă startul a fost limitat, mutăm și zarurile
+        fling.dice = dice.map(d => { const n = Math.hypot(...d.q) || 1; return { p: d.p.map((v, i) => v + shift[i]), q: d.q.map(v => v / n) }; });
+      }
+    }
   }
   return fling;
 }

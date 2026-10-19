@@ -148,6 +148,8 @@ export function createJenga() {
       held = null;
       ghost.visible = false;
     },
+    // unde e piesa ținută (local față de grup), dacă ții una
+    get heldPosition() { return held ? tower.localToWorld(blocks[held.i].position.clone()).applyMatrix4(group.matrixWorld.clone().invert()) : null; },
     // cât de tare se clatină (0 = deloc, 1 = tare)
     shake(level) { wobble = Math.max(wobble, Math.min(1, level)); },
     select(index) {

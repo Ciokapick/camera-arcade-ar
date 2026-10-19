@@ -144,11 +144,15 @@ export function makeHand(landmarks, { width, height, focal, camera, metersToWorl
   };
 }
 
+// Din câte în câte cadre căutăm mâna: la fiecare cât ții zarul (content.handsFast), din 2 în 2 pe rândul tău,
+// din 4 în 4 când nu e rândul tău (content.handsActive === false) — doar ca mâna să rămână peste tablă.
+const handEvery = content => (content.handsFast ? 1 : content.handsActive === false ? 4 : 2);
+
 // Rulează detecția pe `source` (canvas) cât timp scena e deschisă; dă conținutului mâinile. null dacă nu le vrea.
 function handTracking(source, camera, focal, content) {
   if (!content.hands) return null;
   let tracker = null, stamp = 0, failed = false;
-  loadHandTracker('GPU').catch(() => loadHandTracker('CPU')).then(t => { tracker = t; }, error => { console.warn(error); failed = true; });
+  loadHandTracker('GPU', 1).catch(() => loadHandTracker('CPU', 1)).then(t => { tracker = t; }, error => { console.warn(error); failed = true; });
   const scale = new THREE.Vector3();
   return {
     get ready() { return !!tracker; },
@@ -166,6 +170,67 @@ function handTracking(source, camera, focal, content) {
     },
   };
 }
+// Mâna reală peste tabla virtuală (ocluzie): din imaginea camerei decupăm silueta mâinii — oasele degetelor ca
+// linii groase + palma — și o desenăm pe un strat deasupra scenei 3D. Ce ții în mână (zarul, pionul, piesa) rămâne
+// în față: content.holes() → [{ world, radius (m) }] = găuri în siluetă acolo unde e obiectul.
+const BONES = [[0, 1, 2, 3, 4], [0, 5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [0, 17, 18, 19, 20], [5, 9, 13, 17]];
+export function handOcclusion(root, width, height) {
+  const layer = document.createElement('canvas');
+  layer.width = width;
+  layer.height = height;
+  layer.className = 'stage-layer';
+  layer.style.pointerEvents = 'none';
+  root.append(layer);
+  const ctx = layer.getContext('2d');
+  const mask = document.createElement('canvas');
+  mask.width = width;
+  mask.height = height;
+  const m = mask.getContext('2d');
+  const v = new THREE.Vector3();
+  return {
+    ctx,
+    draw(frame, hands, camera, focal, content) {
+      ctx.clearRect(0, 0, width, height);
+      if (!hands.length) return;
+      m.clearRect(0, 0, width, height);
+      m.fillStyle = m.strokeStyle = '#fff';
+      m.lineCap = m.lineJoin = 'round';
+      for (const hand of hands) {
+        const p = i => [hand.landmarks[i].x * width, hand.landmarks[i].y * height];
+        const palmWidth = Math.hypot(p(5)[0] - p(17)[0], p(5)[1] - p(17)[1]);
+        m.lineWidth = palmWidth * 0.32; // grosimea unui deget
+        for (const chain of BONES) {
+          m.beginPath();
+          chain.forEach((i, k) => m[k ? 'lineTo' : 'moveTo'](...p(i)));
+          m.stroke();
+        }
+        m.beginPath();
+        [0, 1, 2, 5, 9, 13, 17].forEach((i, k) => m[k ? 'lineTo' : 'moveTo'](...p(i)));
+        m.closePath();
+        m.fill();
+      }
+      // găurile: obiectele ținute în mână rămân în fața degetelor
+      m.globalCompositeOperation = 'destination-out';
+      const scale = content.group.getWorldScale(new THREE.Vector3()).x;
+      for (const { world, radius } of content.holes?.() ?? []) {
+        v.copy(world).project(camera);
+        const depth = camera.position.distanceTo(world);
+        if (v.z > 1 || depth <= 0) continue;
+        m.beginPath();
+        m.arc((v.x + 1) / 2 * width, (1 - v.y) / 2 * height, focal * radius * scale / depth, 0, Math.PI * 2);
+        m.fill();
+      }
+      m.globalCompositeOperation = 'source-over';
+      // pixelii camerei, doar unde e mâna
+      ctx.drawImage(frame, 0, 0, width, height);
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.drawImage(mask, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+    },
+    remove() { layer.remove(); },
+  };
+}
+
 // puncte mici pe vârful degetelor mare și arătător (verzi când le ții lipite) — ca să vezi că te vede.
 // Cu zarul în mână (content.handsFast) și conturul palmei: verde = deschisă, portocaliu = pumn.
 const PALM = [0, 1, 5, 9, 13, 17];
@@ -478,6 +543,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
   }
 
   const handsTracking = handTracking(canvas, camera, L.focal, content);
+  const occlusion = handsTracking && handOcclusion(root, L.w, L.h);
   const offTap = tapHandler(root, camera, content, world, onTap, event => {
     if (state === 'scanning') { status('Încă nu am găsit masa — mișcă telefonul încet, cu masa în cadru.'); return false; }
     if (state === 'found') {
@@ -531,11 +597,14 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       else if (state === 'placed') status('');
     }
     if (pose && state === 'placed') status('');
-    // mâinile: din 2 în 2 cadre (pe telefon tracking-ul + mâinile deodată sunt grele); cu zarul în mână, la fiecare
-    if (handsTracking && state === 'placed' && (content.handsFast || frameCount % 2 === 0)) lastHands = handsTracking.frame();
-    if (state === 'placed') drawHandHints(ctx, lastHands, content.handsFast);
+    // mâinile (pe telefon tracking-ul + mâinile deodată sunt grele, așa că nu la fiecare cadru — vezi handEvery)
+    if (handsTracking && state === 'placed' && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame();
     content.update(dt);
     renderer.render(scene, camera);
+    if (occlusion) {
+      occlusion.draw(canvas, state === 'placed' ? lastHands : [], camera, L.focal, content);
+      if (state === 'placed') drawHandHints(occlusion.ctx, lastHands, content.handsFast);
+    }
   }
   let lastHands = [];
   raf = requestAnimationFrame(loop);
@@ -555,6 +624,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       video.pause();
       video.remove();
       canvas.remove();
+      occlusion?.remove();
       renderer.domElement.remove();
       renderer.dispose();
     },
@@ -638,6 +708,7 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
 
   const offTap = tapHandler(root, camera, content, world, onTap, () => state === 'placed');
   const handsTracking = handTracking(canvas, camera, L.focal, content);
+  const occlusion = handsTracking && handOcclusion(root, L.w, L.h);
   let frameCount = 0, lastHands = [];
 
   function loop(time) {
@@ -653,10 +724,13 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
     anchor.visible = visible;
     go(visible ? 'placed' : 'scanning');
     status(visible ? '' : 'Caut markerul… ține-l întreg în cadru.');
-    if (handsTracking && visible && (content.handsFast || frameCount % 2 === 0)) lastHands = handsTracking.frame();
-    if (visible) drawHandHints(ctx, lastHands, content.handsFast);
+    if (handsTracking && visible && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame();
     content.update(dt);
     renderer.render(scene, camera);
+    if (occlusion) {
+      occlusion.draw(canvas, visible ? lastHands : [], camera, L.focal, content);
+      if (visible) drawHandHints(occlusion.ctx, lastHands, content.handsFast);
+    }
   }
   raf = requestAnimationFrame(loop);
 
@@ -673,6 +747,7 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
       video.pause();
       video.remove();
       canvas.remove();
+      occlusion?.remove();
       renderer.domElement.remove();
       renderer.dispose();
     },

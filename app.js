@@ -266,12 +266,15 @@ function startStageView(v) {
   if (v.game === 'barbut') {
     const group = new THREE.Group();
     const dice = createDice(group, { count: 2, size: 0.035 });
-    v.content = { group, dice, footprint: 0.16, get busy() { return dice.busy; }, drag: { start: flickStart, move: flickMove, end: flickEnd }, hands: diceHands, get handsFast() { return myDiceTurn(); }, update: dt => { if (dice.update(dt)) settled(); } };
+    v.content = { group, dice, footprint: 0.16, get busy() { return dice.busy; }, drag: { start: flickStart, move: flickMove, end: flickEnd }, hands: diceHands, holes: heldDiceHole(0.055), get handsFast() { return myDiceTurn(); }, get handsActive() { return myDiceTurn(); }, update: dt => { if (dice.update(dt)) settled(); } };
   } else if (v.game === 'xo') {
     const cube = createXO();
     v.xo = cube;
     v.xoArmed = true;
-    v.content = { group: cube.group, footprint: cube.footprint, busy: false, pick: raycaster => pickCell(raycaster), hands: xoHands, update: dt => cube.update(dt) };
+    v.content = {
+      group: cube.group, footprint: cube.footprint, busy: false, pick: raycaster => pickCell(raycaster), hands: xoHands, update: dt => cube.update(dt),
+      get handsActive() { const s = room?.state.xo; return !!s && !s.winner && s.players[s.turn] === room.selfId; },
+    };
   } else if (v.game === 'jenga') {
     const tower = createJenga();
     v.jenga = tower;
@@ -280,6 +283,9 @@ function startStageView(v) {
       pick: raycaster => pickBlock(raycaster),
       drag: { start: grabBlock, move: dragBlock, end: dropBlock },
       hands: jengaHands,
+      get handsActive() { const j = room?.state.jenga; return !!j && j.phase === 'pull' && jengaTurn(j) === room.selfId; },
+      // piesa ținută rămâne în fața degetelor
+      holes: () => { const p = tower.heldPosition; return p ? [{ world: tower.group.localToWorld(p), radius: 0.045 }] : []; },
       update: dt => { if (tower.update(dt)) settled(); },
     };
   } else {
@@ -294,7 +300,13 @@ function startStageView(v) {
       pick: raycaster => pickPawn(raycaster),
       hands: ludoHands,
       drag: { start: pawnGrab, move: pawnCarry, end: pawnRelease },
+      // în fața mâinii: zarul din palmă și pionul ținut
+      holes: () => {
+        const pawn = board.carriedPosition;
+        return pawn ? [{ world: board.group.localToWorld(pawn), radius: 0.016 }] : heldDiceHole(0.03)();
+      },
       get handsFast() { return myLudoRoll(); },
+      get handsActive() { const L = room?.state.ludo; return !!L && ludo.current(L) === me()?.color; },
       update: dt => {
         if (board.update(dt)) settled();
         syncBoard();
@@ -378,7 +390,7 @@ function animateNewRoll(state) {
     const angle = (roll.seq * 2.399) % (Math.PI * 2);
     from = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
   }
-  const f = roll.fling, launch = f?.start ? { start: new THREE.Vector3(...f.start), vel: new THREE.Vector3(...f.vel) } : null;
+  const f = roll.fling, launch = f?.start ? { start: new THREE.Vector3(...f.start), vel: new THREE.Vector3(...f.vel), dice: f.dice } : null;
   view.content.dice.throw({ values: roll.values, seed: roll.seq * 7919 + 17, from, power: f?.power, launch });
 }
 
@@ -443,6 +455,11 @@ const diceHands = hands => handDice(hands, myDiceTurn, throwDice, 'Zarurile sunt
 //    ca să nu „pâlpâie” când mâna e pe jumătate strânsă;
 //  - poziția palmei netezită (zarurile nu tremură, viteza aruncării iese curată).
 const CLOSE = 1.3, OPEN = 1.55, SMOOTH = 0.45;
+// zarul ținut în mână rămâne desenat în fața degetelor (gaură în silueta mâinii, vezi ar.js → handOcclusion)
+const heldDiceHole = radius => () => {
+  const H = view?.hand;
+  return H?.pos && (H.state === 'palm' || H.state === 'fist') ? [{ world: view.content.group.localToWorld(H.pos.clone()), radius }] : [];
+};
 function handDice(hands, canThrow, onThrow, inPalm) {
   const v = view, dice = v.content.dice;
   const hand = hands.reduce((best, h) => (!best || h.depth < best.depth ? h : best), null);
@@ -467,7 +484,7 @@ function handDice(hands, canThrow, onThrow, inPalm) {
   while (H.track.length && now - H.track[0].t > 300) H.track.shift();
   if (H.closed) {
     if (H.state !== 'fist') Object.assign(H, { state: 'fist', since: now, shakes: 0, dir: 0 });
-    dice.hold(null); // sunt în pumn
+    dice.hold(at, true); // în pumn: tot le vezi, strânse, scuturându-se
     // agitat: schimbare de sens pe direcția mișcării, cu viteză destulă
     const prev = H.track.at(-3);
     if (prev) {
@@ -493,7 +510,8 @@ function handDice(hands, canThrow, onThrow, inPalm) {
     const power = Math.min(1, 0.3 + H.shakes * 0.1);
     Object.assign(H, { state: 'idle', track: [], shakes: 0 });
     const dir = Math.hypot(vel.x, vel.z) > 1e-4 ? vel : new THREE.Vector3(0, 0, -1);
-    onThrow({ x: dir.x, z: dir.z, power, start: at.toArray(), vel: vel.toArray() });
+    // pleacă exact cum erau în mână (poziție + rotație), deci le vezi rostogolindu-se din palmă
+    onThrow({ x: dir.x, z: dir.z, power, start: at.toArray(), vel: vel.toArray(), dice: dice.heldState() });
     return;
   }
   H.state = 'palm';

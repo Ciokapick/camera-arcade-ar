@@ -188,6 +188,12 @@ Măsurat: 10/10 pe poze reale și 111/112 pe imagini stricate intenționat (blur
 - **Nu te supăra**: zarul din palmă, exact ca la zaruri (`handDice`, comun); căsuțele unde poți muta sunt marcate (disc alb, contur în culoarea ta, un val care se lărgește); pionul îl iei cu degetul pe ecran (`content.drag`) sau ciupit cu mâna — aceleași funcții `pawnGrab` / `pawnCarry` / `pawnRelease` — și îl lași pe marcaj (devine verde când ești deasupra). Lăsat în altă parte, se întoarce.
 - **Piatră–hârtie–foarfecă** (`rps-ar.js`): același calcul pune un obiect 3D deasupra fiecărei mâini; adversarul „se gândește” sus; la rezultat câștigătorul zboară în cel învins, care se sparge în bucăți.
 
+**Mâna peste tabla virtuală (ocluzie).** Tabla 3D e desenată peste imaginea camerei, deci fără nimic în plus ți-ar acoperi mâna. `ar.js → handOcclusion` decupează din imaginea camerei silueta mâinii (oasele degetelor ca linii groase + palma, din cele 21 de puncte) și o desenează pe un strat deasupra scenei 3D — mâna ta apare peste tablă. Ce ții în mână rămâne în față: fiecare joc spune prin `content.holes()` unde e obiectul ținut (zarul, pionul, piesa de Jenga), iar acolo silueta are o gaură.
+
+**Zarul în mână și rostogolirea din ea.** Zarul rămâne vizibil și în pumn (strâns, se scutură când agiți). La aruncare, poziția și rotația fiecărui zar din mână pleacă odată cu aruncarea (`fling.dice`), deci simularea pornește exact de acolo — îl vezi căzând din palmă, iar toți jucătorii văd aceeași aruncare. La „Nu te supăra” mâna poate fi în afara tablei, așa că zarul e țintit să aterizeze pe tablă (viteza orizontală e corectată, nu poziția).
+
+**Viteză.** În scena AR căutăm o singură mână; la fiecare cadru cât ții zarul, din 2 în 2 pe rândul tău, din 4 în 4 când nu e rândul tău.
+
 Pe Android, WebXR nu dă acces la imaginea camerei, așa că modul „pe masă” folosește acum SLAM peste tot (WebXR rămâne cu `?webxr`).
 
 ## 9. Jenga: de ce *nu* e fizică adevărată

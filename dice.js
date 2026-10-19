@@ -83,7 +83,7 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
   });
 
   let playback = null; // { frames, fix, t, values, done }
-  let held = null, holdTime = 0; // zarurile ținute în palmă (punct local)
+  let held = null, holdTime = 0, holdClosed = false; // zarurile ținute în palmă (punct local)
 
   // power 0..1: cât de tare ai aruncat (degetul / scuturatul); 0.5 = aruncare obișnuită
   // launch { start, vel } (local, m și m/s): aruncate din mână — pleacă exact de acolo, cu viteza mâinii
@@ -97,7 +97,9 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     table.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
     table.position.y = floor;
     world.addBody(table);
-    if (bounds) {
+    // pereții invizibili țin zarul pe tablă; aruncat din mână (care poate fi în afara tablei) nu-i punem —
+    // îl țintim în schimb să aterizeze pe tablă (mai jos)
+    if (bounds && !launch?.dice) {
       for (const [x, z, w, d] of [[bounds, 0, 0.01, bounds], [-bounds, 0, 0.01, bounds], [0, bounds, bounds, 0.01], [0, -bounds, bounds, 0.01]]) {
         const wall = new CANNON.Body({ mass: 0, material: tableMaterial, shape: new CANNON.Box(new CANNON.Vec3(w, 0.15, d)) });
         wall.position.set(x, floor + 0.15, z);
@@ -115,13 +117,28 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     const bodies = meshes.map((mesh, i) => {
       const body = new CANNON.Body({ mass: 0.02, material: diceMaterial, shape: new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 2)), sleepSpeedLimit: 0.05, sleepTimeLimit: 0.3, linearDamping: 0.1, angularDamping: 0.35 });
       const offset = (i - (count - 1) / 2) * size * 1.6;
-      const start = launch ? launch.start.clone().addScaledVector(side, offset) : forward.clone().multiplyScalar(-reach).addScaledVector(side, offset);
-      // cu pereți (tabla de Ludo): din mână, dar înăuntrul lor
-      if (launch && bounds) { start.x = Math.max(-bounds * 0.8, Math.min(bounds * 0.8, start.x)); start.z = Math.max(-bounds * 0.8, Math.min(bounds * 0.8, start.z)); }
+      const fromHand = launch?.dice?.[i]; // { p, q }: zarul exact cum era în mână
+      const start = fromHand ? new THREE.Vector3(...fromHand.p) : launch ? launch.start.clone().addScaledVector(side, offset) : forward.clone().multiplyScalar(-reach).addScaledVector(side, offset);
+      // cu pereți (tabla de Ludo), aruncat fără zarurile din mână: pornește înăuntrul lor
+      if (launch && bounds && !fromHand) { start.x = Math.max(-bounds * 0.8, Math.min(bounds * 0.8, start.x)); start.z = Math.max(-bounds * 0.8, Math.min(bounds * 0.8, start.z)); }
       body.position.set(start.x, launch ? Math.max(floor + size, start.y) : floor + 0.1 + size * 2, start.z);
       body.quaternion.setFromEuler(rand() * 6.3, rand() * 6.3, rand() * 6.3);
+      if (fromHand) body.quaternion.set(...fromHand.q);
       const speed = (0.15 + rand() * 0.15) * (0.5 + power);
       if (launch) body.velocity.set(launch.vel.x + (rand() - 0.5) * 0.08, launch.vel.y, launch.vel.z + (rand() - 0.5) * 0.08);
+      if (fromHand && bounds) {
+        // țintit: unde ar ateriza (aruncare oblică) — dacă ar cădea în afara tablei, corectăm viteza orizontală
+        // ca să aterizeze pe marginea zonei bune, în direcția aruncării; rămâne aruncarea ta, doar scurtată/lungită
+        const h = Math.max(0.005, start.y - floor), vy = body.velocity.y, g = 9.82;
+        const t = (vy + Math.sqrt(vy * vy + 2 * g * h)) / g;
+        const land = new THREE.Vector3(start.x + body.velocity.x * t, 0, start.z + body.velocity.z * t);
+        const R = bounds * 0.55;
+        if (Math.hypot(land.x, land.z) > R) {
+          land.setLength(R);
+          body.velocity.x = (land.x - start.x) / t;
+          body.velocity.z = (land.z - start.z) / t;
+        }
+      }
       else body.velocity.set(forward.x * speed + (rand() - 0.5) * 0.05, 0.2, forward.z * speed + (rand() - 0.5) * 0.05);
       const spin = 24 * (0.6 + power * 0.8);
       body.angularVelocity.set((rand() - 0.5) * spin, (rand() - 0.5) * spin, (rand() - 0.5) * spin);
@@ -155,21 +172,26 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
       playback = { frames, impacts, fix, t: 0, frame: -1, values, done: false };
       meshes.forEach(m => { m.visible = true; });
     },
-    // zarurile în mână: urmăresc punctul `at` (local) lin, rotindu-se ușor; null = le ascunzi (în pumn)
-    hold(at) {
+    // zarurile în mână: urmăresc punctul `at` (local) lin, rotindu-se ușor (null = nu mai sunt în mână);
+    // closed = pumn: stau strânse și se scutură
+    hold(at, closed = false) {
       if (this.busy) return;
       playback = null;
       held = at ? at.clone() : null;
+      holdClosed = closed;
       meshes.forEach(m => { m.visible = !!at; });
     },
+    // cum sunt zarurile în mână acum (local): poziție și rotație, ca aruncarea să pornească exact de aici
+    heldState: () => meshes.map(m => ({ p: m.position.toArray(), q: m.quaternion.toArray() })),
     // avansează animația; întoarce valorile o singură dată, când zarurile s-au oprit
     update(dt) {
       if (held) {
         holdTime += dt;
         meshes.forEach((m, i) => {
-          const target = held.clone().add(new THREE.Vector3((i - (count - 1) / 2) * size * 1.15, size * 0.6, 0));
-          m.position.lerp(target, Math.min(1, dt * 12));
-          m.rotation.set(holdTime * 0.7 + i, holdTime * 0.5, 0);
+          const spread = holdClosed ? 0.8 : 1.15, jiggle = holdClosed ? size * 0.12 : 0;
+          const target = held.clone().add(new THREE.Vector3((i - (count - 1) / 2) * size * spread + Math.sin(holdTime * 40 + i) * jiggle, size * 0.6 + Math.cos(holdTime * 37 + i) * jiggle, 0));
+          m.position.lerp(target, Math.min(1, dt * 14));
+          m.rotation.set(holdTime * (holdClosed ? 4 : 0.7) + i, holdTime * (holdClosed ? 3 : 0.5), 0);
         });
         return null;
       }

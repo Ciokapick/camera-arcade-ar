@@ -317,7 +317,7 @@ test('zaruri: aruncarea cu degetul ajunge la toți, curățată', () => {
 test('zaruri: aruncate din mână — start și viteză limitate', () => {
   let r = reduce(room(), { type: 'select', game: 'barbut' }, 'h');
   r = reduce(r, { type: 'roll', values: [3, 4], fling: { x: 0, z: -1, power: 0.5, start: [3, 2, 4], vel: [0, 0, -9] } }, 'h');
-  assert.deepEqual(r.roll.fling.start.map(v => +v.toFixed(2)), [0.36, 0.5, 0.48]);
+  assert.deepEqual(r.roll.fling.start.map(v => +v.toFixed(2)), [0.6, 0.8, 0.8]);
   assert.deepEqual(r.roll.fling.vel, [0, 0, -2]);
 });
 
@@ -326,4 +326,14 @@ test('Nu te supăra: zarul aruncat din mână ajunge la toți', () => {
   const first = r.players.find(p => p.color === r.ludo.order[r.ludo.turn]).id;
   r = reduce(r, { type: 'roll', values: [6], fling: { x: 0, z: -1, power: 0.5, start: [0, 0.2, 0.1], vel: [0, 0, -0.5] } }, first);
   assert.deepEqual(r.roll.fling.start, [0, 0.2, 0.1]);
+});
+
+test('zaruri: din mână, fiecare zar cu poziția și rotația lui (rotația normalizată)', () => {
+  let r = reduce(room(), { type: 'select', game: 'barbut' }, 'h');
+  const dice = [{ p: [0.01, 0.2, 0.1], q: [0, 0, 0, 2] }, { p: [-0.01, 0.2, 0.1], q: [0, 1, 0, 0] }];
+  r = reduce(r, { type: 'roll', values: [3, 4], fling: { x: 0, z: -1, power: 0.5, start: [0, 0.2, 0.1], vel: [0, 0, -0.5], dice } }, 'h');
+  assert.deepEqual(r.roll.fling.dice[0], { p: [0.01, 0.2, 0.1], q: [0, 0, 0, 1] });
+  // zaruri departe de mână → ignorate (nu poți „teleporta” zarurile)
+  r = reduce(r, { type: 'roll', values: [1, 2], fling: { x: 0, z: -1, power: 0.5, start: [0, 0.2, 0.1], vel: [0, 0, -0.5], dice: [{ p: [0.5, 0.2, 0.1], q: [0, 0, 0, 1] }] } }, 'a');
+  assert.equal(r.roll.fling.dice, undefined);
 });

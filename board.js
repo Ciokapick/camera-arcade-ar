@@ -194,6 +194,7 @@ export function createBoard() {
       return over;
     },
     get carrying() { return carried ? { index: carried.index, over: !!carried.over } : null; },
+    get carriedPosition() { return carried ? carried.pawn.mesh.position.clone() : null; },
     // l-ai lăsat pe căsuța colorată: mutarea vine din stare; pionul sare direct acolo (nu refacem drumul)
     drop() {
       if (!carried) return;

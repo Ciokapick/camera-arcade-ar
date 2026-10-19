@@ -28,17 +28,18 @@ export function openness(landmarks, aspect = 1) {
 let vision;
 const trackers = {};
 // GPU e mai rapid; pe unele iPhone-uri nu pornește sau dă erori la detecție — atunci trecem pe CPU
-export function loadHandTracker(delegate = 'GPU') {
-  trackers[delegate] ??= (async () => {
+// numHands: 2 la piatră-hârtie-foarfecă (doi jucători pe un telefon), 1 în scena AR (mai repede)
+export function loadHandTracker(delegate = 'GPU', numHands = 2) {
+  trackers[`${delegate}-${numHands}`] ??= (async () => {
     const { FilesetResolver, HandLandmarker } = await import(`${MEDIAPIPE}/+esm`);
     vision ??= await FilesetResolver.forVisionTasks(`${MEDIAPIPE}/wasm`);
     return HandLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: MODEL, delegate },
       runningMode: 'VIDEO',
-      numHands: 2,
+      numHands,
     });
   })();
-  return trackers[delegate];
+  return trackers[`${delegate}-${numHands}`];
 }
 
 const COLORS = ['#c9ff4a', '#4cc3ff'];
