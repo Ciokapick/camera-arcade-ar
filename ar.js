@@ -6,7 +6,7 @@
 //
 // Conținutul (`content`) e în metri, +Y în sus, suprafața la y = 0: { group, update(dt), pick?(raycaster) → bool,
 // facing?: direcția (locală) care trebuie să fie spre jucător, footprint: raza zonei ocupate,
-// hands?(list): mâinile reale din cameră (doar slam și marker — WebXR nu dă acces la imaginea camerei) }.
+// groundShadow?: false = fără umbra moale de sub joc, hands?(list): mâinile reale din cameră (doar slam și marker — WebXR nu dă acces la imaginea camerei) }.
 import * as THREE from 'three';
 import { loadHandTracker, classify, openness } from './hands.js';
 
@@ -58,14 +58,35 @@ function createWorld(content) {
   shadowPlane.receiveShadow = true;
   shadowPlane.position.y = 0.0005;
   anchor.add(shadowPlane);
-  // cercul cu grilă = „am găsit suprafața aici”
+  // cercul cu grilă = „am găsit suprafața aici”; are exact mărimea jocului, ca să vezi dinainte cât loc ocupă
   const r = content.footprint ?? 0.16;
   const reticle = new THREE.Group();
   const grid = new THREE.PolarGridHelper(r, 8, 4, 48, LIME, LIME);
   grid.material.transparent = true;
   grid.material.opacity = 0.55;
-  reticle.add(grid, new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0.12, depthWrite: false })));
-  anchor.add(reticle, content.group);
+  grid.material.depthWrite = false;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(r * 0.96, r, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0.9, depthWrite: false }));
+  // un val care pleacă din centru: arată că cercul e „viu” și urmărește masa
+  const pulse = new THREE.Mesh(new THREE.RingGeometry(r * 0.9, r, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0, depthWrite: false }));
+  reticle.add(grid, ring, pulse, new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0.12, depthWrite: false })));
+  // între ancoră și joc: aici animăm așezarea, fără să atingem jocul în sine
+  const stand = new THREE.Group();
+  // umbră moale de contact sub joc: îl „lipește” de masa reală (umbra soarelui singură e prea fină)
+  const blobCanvas = document.createElement('canvas');
+  blobCanvas.width = blobCanvas.height = 128;
+  const bg = blobCanvas.getContext('2d'), gradient = bg.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gradient.addColorStop(0, 'rgba(0,0,0,0.42)');
+  gradient.addColorStop(0.6, 'rgba(0,0,0,0.22)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  bg.fillStyle = gradient;
+  bg.fillRect(0, 0, 128, 128);
+  // (nu și la zaruri: acolo cercul e doar zona de aruncat, nu un obiect)
+  const blob = new THREE.Mesh(new THREE.PlaneGeometry(r * 1.8, r * 1.8).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(blobCanvas), transparent: true, depthWrite: false }));
+  blob.position.y = 0.0003;
+  blob.renderOrder = -1;
+  blob.visible = content.groundShadow !== false;
+  stand.add(blob, content.group);
+  anchor.add(reticle, stand);
 
   const setScale = s => {
     anchor.scale.setScalar(s);
@@ -73,7 +94,44 @@ function createWorld(content) {
     sun.shadow.camera.updateProjectionMatrix();
   };
   setScale(1);
-  return { scene, anchor, reticle, shadowPlane, setScale };
+
+  // cât cauți locul, cercul urmărește suprafața lin (hit-test-ul tremură de la un cadru la altul);
+  // un salt mare (altă suprafață) = imediat
+  let seen = false, time = 0, drop = null;
+  const follow = (point, quaternion = null, dt = 1 / 60) => {
+    if (!point) { reticle.visible = false; seen = false; return; }
+    const k = 1 - Math.exp(-dt * 14);
+    if (!seen || anchor.position.distanceTo(point) > r * 1.5 * anchor.scale.x) { anchor.position.copy(point); if (quaternion) anchor.quaternion.copy(quaternion); }
+    else { anchor.position.lerp(point, k); if (quaternion) anchor.quaternion.slerp(quaternion, k); }
+    seen = true;
+    reticle.visible = true;
+  };
+  // jocul „aterizează”: pleacă din locul cercului spre locul atins, coboară puțin și crește ușor peste mărimea finală
+  const place = point => {
+    drop = { from: anchor.position.clone(), to: (point ?? anchor.position).clone(), t: 0 };
+    anchor.position.copy(drop.to);
+    seen = false;
+  };
+  const tick = dt => {
+    time += dt;
+    if (reticle.visible) {
+      const p = (time * 0.8) % 1;
+      pulse.scale.setScalar(0.15 + p * 0.85);
+      pulse.material.opacity = 0.5 * (1 - p);
+      ring.material.opacity = 0.65 + 0.25 * Math.sin(time * 4);
+    }
+    if (!drop) return;
+    drop.t = Math.min(1, drop.t + dt / 0.45);
+    const t = drop.t, slide = 1 - (1 - Math.min(1, t * 1.6)) ** 3;
+    anchor.position.lerpVectors(drop.from, drop.to, slide);
+    // ease-out-back: depășește puțin și revine, ca o piesă pusă pe masă
+    const back = 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
+    stand.scale.setScalar(0.7 + 0.3 * back);
+    stand.position.y = 0.05 * (1 - slide) ** 2;
+    blob.material.opacity = t;
+    if (t === 1) { drop = null; stand.scale.setScalar(1); stand.position.y = 0; }
+  };
+  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, tick };
 }
 
 // Rotește conținutul ca direcția `facing` să fie spre cameră (ex.: culoarea ta în fața ta)
@@ -410,8 +468,8 @@ async function startWebXR({ overlay, content, world, status, setState, onTap }) 
   document.body.append(renderer.domElement);
   const { scene, anchor, reticle } = world;
   const camera = new THREE.PerspectiveCamera();
-  anchor.matrixAutoUpdate = false;
   content.group.visible = false;
+  const hitMatrix = new THREE.Matrix4(), hitP = new THREE.Vector3(), hitQ = new THREE.Quaternion(), hitS = new THREE.Vector3();
 
   const session = await navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay'], domOverlay: { root: overlay } });
   await renderer.xr.setSession(session);
@@ -430,6 +488,7 @@ async function startWebXR({ overlay, content, world, status, setState, onTap }) 
     if (state === 'found') {
       go('placed');
       reticle.visible = false;
+      world.place();
       content.group.visible = true;
       faceCamera(content, cameraWorld());
       status('');
@@ -459,15 +518,15 @@ async function startWebXR({ overlay, content, world, status, setState, onTap }) 
       stableHits = hit ? stableHits + 1 : 0;
       if (hit) {
         // pose-ul hit-test-ului are axa Y pe normala suprafeței, exact cadrul mesei
-        anchor.matrix.fromArray(hit.getPose(renderer.xr.getReferenceSpace()).transform.matrix);
-        anchor.updateMatrixWorld(true);
-      }
-      reticle.visible = stableHits > 0;
+        hitMatrix.fromArray(hit.getPose(renderer.xr.getReferenceSpace()).transform.matrix).decompose(hitP, hitQ, hitS);
+        world.follow(hitP, hitQ, dt);
+      } else world.follow(null);
       if (state === 'scanning' && stableHits > 15) {
         go('found');
         status('Am găsit suprafața! Atinge ecranul ca să pui jocul acolo.');
       }
     }
+    world.tick(dt);
     content.update(dt);
     renderer.render(scene, camera);
   });
@@ -557,14 +616,14 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
   // punctul de pe masă de sub (x, y) ∈ [0, 1]: suprafața găsită de 8th Wall, altfel planul y = 0 (masa)
   const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), ray = new THREE.Raycaster();
   const hitAt = (x, y) => {
-    const hits = XR8.XrController.hitTest(x, y, ['FEATURE_POINT', 'ESTIMATED_SURFACE', 'DETECTED_SURFACE']);
+    const hits = XR8.XrController.hitTest(x, y, ['ESTIMATED_SURFACE', 'DETECTED_SURFACE']);
     const hit = hits.find(h => h.type === 'DETECTED_SURFACE') ?? hits.find(h => h.type === 'ESTIMATED_SURFACE');
     if (hit && Number.isFinite(hit.position.x)) return new THREE.Vector3(hit.position.x, hit.position.y, hit.position.z);
     ray.setFromCamera(new THREE.Vector2(x * 2 - 1, 1 - y * 2), camera);
     return ray.ray.intersectPlane(tablePlane, new THREE.Vector3());
   };
   const place = point => {
-    anchor.position.copy(point);
+    world.place(point);
     anchor.quaternion.identity(); // masa = planul y = 0 al lui 8th Wall
     reticle.visible = false;
     content.group.visible = true;
@@ -607,8 +666,10 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
           status('Atinge masa unde vrei să pui jocul.');
         }
         if (state === 'found') {
+          // nu prea departe (spre orizont, planul y = 0 dă puncte la metri distanță)
           const point = hitAt(0.5, 0.55);
-          if (point) { anchor.position.copy(point); anchor.quaternion.identity(); }
+          world.follow(point && point.distanceTo(camera.position) < 2.5 ? point : null);
+          anchor.quaternion.identity();
         }
         if (state === 'placed') status(r.trackingStatus === 'LIMITED' ? 'Urmărirea e slabă — mișcă telefonul mai încet, cu masa în cadru.' : '');
       }
@@ -623,6 +684,7 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
         handCtx.drawImage(feed, 0, 0, handCanvas.width, handCanvas.height); // imaginea camerei de pe ecran, abia desenată
         lastHands = handsTracking.frame();
       }
+      world.tick(dt);
       content.update(dt);
       renderer.render(scene, camera);
       if (occlusion) {
@@ -757,7 +819,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
     if (state === 'found') {
       // jocul se fixează exact unde ai atins; scara SLAM-ului (care nu știe metri) vine din distanța presupusă
       const hit = pointOnSurface(ndcFromEvent(event, root));
-      if (hit) anchor.position.copy(hit);
+      world.place(hit);
       setScale(camera.position.distanceTo(anchor.position) / ASSUMED_DISTANCE);
       reticle.visible = false;
       content.group.visible = true;
@@ -801,10 +863,8 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       if (state === 'found') {
         // cât alegi locul, cercul urmărește centrul ecranului pe suprafață
         const hit = pointOnSurface(new THREE.Vector2(0, 0));
-        if (hit) {
-          anchor.position.copy(hit);
-          setScale(camera.position.distanceTo(hit) / ASSUMED_DISTANCE);
-        }
+        world.follow(hit && hit.distanceTo(camera.position) < 8 * ASSUMED_DISTANCE ? hit : null, null, dt);
+        if (reticle.visible) setScale(camera.position.distanceTo(anchor.position) / ASSUMED_DISTANCE);
       }
       anchor.visible = state !== 'scanning';
     } else {
@@ -817,6 +877,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
     if (pose && state === 'placed') status('');
     // mâinile (pe telefon tracking-ul + mâinile deodată sunt grele, așa că nu la fiecare cadru — vezi handEvery)
     if (handsTracking && state === 'placed' && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame();
+    world.tick(dt);
     content.update(dt);
     renderer.render(scene, camera);
     if (occlusion) {

@@ -123,6 +123,8 @@ Trucul:
 3. La final se vede ce față a ieșit sus (de exemplu 5), deși voiam 4.
 4. Se **re-etichetează** zarul (`relabel`): se rotește doar „vopseaua” zarului în interiorul lui, astfel încât fața de 4 să fie cea care va ajunge sus. Mișcarea rămâne aceeași, doar desenul e întors.
 
+5. La redare, cadrele (înregistrate la 60 fps) sunt **interpolate**, ca zarul să nu sacadeze cu încetinitorul sau pe ecranele de 120 Hz. Zborul merge aproape în timp real, iar spre final redarea încetinește. După oprire, zarul se așază perfect pe o față (fizica îl lasă uneori ușor înclinat).
+
 Rezultatul: rostogolire 100% fizică, rezultat 100% decis dinainte. Fețele (punctele) sunt desenate dintr-un `<canvas>`, fără imagini.
 
 ---
@@ -144,6 +146,8 @@ Toate jocurile sunt construite „în metri”, cu masa la înălțimea 0. `ar.j
 Cu AlvaAR tabla „urca” și sărea, mai ales cu mâna în cadru. Am căutat alternative care merg în Safari pe iPhone (unde WebXR pentru AR nu există): 8th Wall (folosit ani de zile în campanii WebAR, binarul cu SLAM e gratuit din 2026, cu licență proprie), Zappar (comercial, cu abonament), encantar.js / MindAR / AR.js (doar imagini/markere, fără urmărirea mesei). 8th Wall e singura variantă gratuită și testată pe scară largă.
 
 Cum e legat (`ar.js → startXR8`): 8th Wall desenează imaginea camerei pe un canvas al lui și ne dă, la fiecare cadru, poziția și rotația telefonului plus matricea de proiecție; noi desenăm jocul cu three.js pe un canvas transparent deasupra. „Pământul” lui (y = 0) e masa: pornim camera la 45 cm deasupra, deci unitățile ≈ metri. Atingerea pune jocul cu `hitTest` (sau, dacă nu răspunde, raza din deget intersectată cu planul y = 0). Pentru mână, `CameraPixelArray` ne dă pixelii camerei (480 px), din care MediaPipe găsește mâna; coordonatele se mută din imaginea întreagă în cea tăiată „cover” de pe ecran. La pariul cu bancnote 8th Wall e pus pe pauză (pe iPhone nu merg două camere deodată). Dacă 8th Wall nu pornește în 12 s, trecem singuri pe AlvaAR.
+
+Plasarea (comună tuturor modurilor, `createWorld` → `follow` / `place` / `tick`): cercul are exact mărimea jocului și urmărește suprafața lin (hit-test-ul tremură de la un cadru la altul; un salt mare înseamnă altă suprafață, deci se mută imediat). Un val pornește din centru, ca să se vadă că cercul e „viu”. Punctele prea depărtate (spre orizont) ascund cercul. La atingere, jocul „aterizează”: alunecă din cerc spre locul atins, coboară puțin și crește ușor peste mărimea finală. O umbră moale de contact îl lipește de masă (la zaruri nu, acolo cercul e doar zona de aruncat).
 
 Licența cere să păstrăm mențiunea Niantic Spatial și trimiterea la licență — e în lobby, jos.
 
