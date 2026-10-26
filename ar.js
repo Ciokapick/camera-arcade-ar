@@ -9,6 +9,7 @@
 // groundShadow?: false = fără umbra moale de sub joc, hands?(list): mâinile reale din cameră (doar slam și marker — WebXR nu dă acces la imaginea camerei) }.
 import * as THREE from 'three';
 import { loadHandTracker, classify, openness } from './hands.js';
+import { tableHeight } from './surface.js';
 
 // 8th Wall Engine (Niantic Spatial) — urmărirea mesei principală: SLAM testat ani de zile în Safari pe iPhone.
 // Binarul e gratuit, cu licență proprie (nu open source): github.com/8thwall/engine/blob/main/LICENSE
@@ -803,17 +804,38 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
   const occlusion = handsTracking && handOcclusion(root, W, H);
   let lastHands = [];
 
-  // punctul de pe masă de sub (x, y) ∈ [0, 1]: suprafața găsită de 8th Wall, altfel planul y = 0 (masa)
+  // Masa, ca la aplicația Măsurare: la fiecare cadru întrebăm 8th Wall ce puncte 3D vede sub câteva locuri de pe
+  // ecran (o grilă parcursă pe rând), ținem ultimele ~2,5 s și luăm înălțimea la care se adună cele mai multe
+  // (surface.js). Înălțimea „0” a lui 8th Wall vine doar din cum țineai telefonul la pornire, deci nu ne bazăm
+  // pe ea. Cu mâna în cadru nu adunăm puncte (ar trage masa în sus), iar după plasare masa rămâne fixă.
+  const GRID = [];
+  for (let i = 0; i < 7; i++) for (let j = 0; j < 6; j++) GRID.push([0.1 + i * 0.133, 0.3 + j * 0.12]);
+  const samples = [];
+  let gridAt = 0, table = null; // { y, sure }
+  const sampleTable = () => {
+    const now = performance.now();
+    for (let k = 0; k < 7; k++) {
+      const [x, y] = GRID[gridAt++ % GRID.length];
+      for (const h of XR8.XrController.hitTest(x, y, ['FEATURE_POINT', 'ESTIMATED_SURFACE', 'DETECTED_SURFACE'])) {
+        // doar sub telefon; suprafețele detectate de 8th Wall cântăresc mai mult decât punctele izolate
+        if (Number.isFinite(h.position.y) && camera.position.y - h.position.y > 0.05) samples.push({ y: h.position.y, t: now, w: h.type === 'DETECTED_SURFACE' ? 3 : h.type === 'ESTIMATED_SURFACE' ? 2 : 1 });
+      }
+    }
+    while (samples.length && (now - samples[0].t > 2500 || samples.length > 500)) samples.shift();
+    const est = tableHeight(samples.flatMap(p => Array(p.w).fill(p.y)));
+    if (!est) return;
+    const sure = est.count >= 25 && est.support > 0.3;
+    // un salt mare = altă suprafață (te-ai mutat cu telefonul): direct; altfel lin
+    table = !table || Math.abs(est.y - table.y) > 0.05 ? { y: est.y, sure } : { y: table.y + (est.y - table.y) * 0.15, sure };
+  };
+  // punctul de pe masă de sub (x, y) ∈ [0, 1]: raza intersectată cu planul mesei
   const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), ray = new THREE.Raycaster();
   const hitAt = (x, y) => {
-    // doar suprafețe la nivelul mesei (y ≈ 0): mâna din cadru are și ea „suprafețe”, dar e mai sus
-    const hits = XR8.XrController.hitTest(x, y, ['ESTIMATED_SURFACE', 'DETECTED_SURFACE']).filter(h => Math.abs(h.position.y) < 0.06);
-    const hit = hits.find(h => h.type === 'DETECTED_SURFACE') ?? hits.find(h => h.type === 'ESTIMATED_SURFACE');
-    if (hit && Number.isFinite(hit.position.x)) return { point: new THREE.Vector3(hit.position.x, 0, hit.position.z), sure: true };
+    tablePlane.constant = -(table?.y ?? 0);
     ray.setFromCamera(new THREE.Vector2(x * 2 - 1, 1 - y * 2), camera);
-    // nu prea departe (spre orizont, planul y = 0 dă puncte la metri distanță)
     const point = ray.ray.intersectPlane(tablePlane, new THREE.Vector3());
-    return point && point.distanceTo(camera.position) < 2.5 ? { point, sure: false } : null;
+    // nu prea departe (spre orizont planul dă puncte la metri distanță)
+    return point && point.distanceTo(camera.position) < 2.5 ? { point, sure: !!table?.sure } : null;
   };
   // Unitățile lui 8th Wall vin din înălțimea presupusă la pornire (45 cm); dacă telefonul era de fapt mai sus,
   // mai jos sau înclinat altfel, jocul ieșea de 2–4× prea mic. Ca la AlvaAR: îl dimensionăm după distanța
@@ -822,7 +844,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
   const place = point => {
     world.place(point);
     fitScale();
-    anchor.quaternion.identity(); // masa = planul y = 0 al lui 8th Wall
+    anchor.quaternion.identity(); // masa = plan orizontal (lumea lui 8th Wall e aliniată cu gravitația)
     reticle.visible = false;
     content.group.visible = true;
     anchor.visible = true;
@@ -868,6 +890,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
         }
         if (state === 'found') {
           anchor.quaternion.identity();
+          if (!lastHands.length) sampleTable();
           control.frame();
           if (reticle.visible) fitScale();
         }
@@ -919,7 +942,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
     get state() { return state; },
     get failed() { return failed; },
     cameraLocal: () => content.group.worldToLocal(camera.position.clone()),
-    replace() { content.group.visible = false; reticle.visible = true; control.reset(); go('found'); status('Țintește masa sau trage cercul cu degetul, apoi „Pune aici”.'); },
+    replace() { content.group.visible = false; reticle.visible = true; control.reset(); samples.length = 0; table = null; go('found'); status('Țintește masa sau trage cercul cu degetul, apoi „Pune aici”.'); },
     placeHere: () => control.placeHere(),
     // pe iPhone nu merg două camere deodată (ex.: pariul cu bancnote): oprim 8th Wall cât e nevoie
     pause() { XR8.pause(); },

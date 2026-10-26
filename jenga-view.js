@@ -158,16 +158,19 @@ export function createJenga() {
       if (index !== null) blocks[index].material.emissive.setHex(0x3a5a00);
     },
     get selected() { return selected; },
-    // piesa spre care țintește mâna (cu mâna reală nu nimerești niciodată fix): cea mai apropiată de rază,
-    // dintre cele bune (ok), cu un mic avantaj pentru cele din față; null dacă e mai departe de `tolerance`
-    nearest(raycaster, ok, tolerance = W * 1.3) {
+    // piesa spre care țintește mâna (cu mâna reală nu nimerești niciodată fix): cea mai apropiată de rază ca
+    // unghi (deci la fel de ușor de aproape sau de departe), dintre cele bune (ok), cu un mic avantaj pentru
+    // cele din față; null dacă toate sunt mai departe de `tolerance` (radiani, ~6°)
+    nearest(raycaster, ok, tolerance = 0.1) {
       const ray = localRay(raycaster);
       let best = null, bestScore = Infinity;
       blocks.forEach((mesh, i) => {
         if (!ok(i)) return;
-        const d = ray.distanceToPoint(mesh.position);
-        if (d > tolerance) return;
-        const score = d + 0.3 * mesh.position.clone().sub(ray.origin).dot(ray.direction);
+        const along = mesh.position.clone().sub(ray.origin).dot(ray.direction);
+        if (along <= 0) return;
+        const angle = ray.distanceToPoint(mesh.position) / along;
+        if (angle > tolerance) return;
+        const score = angle + 0.02 * along / W;
         if (score < bestScore) { bestScore = score; best = i; }
       });
       return best;

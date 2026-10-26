@@ -33,6 +33,7 @@ Explicat pe larg, pas cu pas: [DOCUMENTATIE.md](DOCUMENTATIE.md).
 | `xo.js`, `xo-view.js` | regulile și calculatorul / tabla 3×3 |
 | `ar.js` | scena: pe masă cu 8th Wall (rezervă: AlvaAR SLAM + giroscop) / marker ArUco (js-aruco2) / WebXR (`?webxr`) |
 | `hands.js` | recunoașterea mâinilor și a gestului |
+| `surface.js` | masa din punctele 3D ale urmăririi (înălțimea unde se adună cele mai multe), ca aplicația Măsurare |
 | `ar.js` → `makeHand` | mâna reală în scena AR: raze 3D prin degete, distanța estimată din mărimea palmei, ciupit |
 | `rps-ar.js` | obiectele 3D de la piatră–hârtie–foarfecă și ciocnirea |
 | `sound.js` | sunete sintetizate, vibrație, confetti |
