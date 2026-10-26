@@ -155,7 +155,7 @@ Alegerea locului e mai ușoară (`placementControl`, pentru 8th Wall și AlvaAR)
 - **Masa recunoscută**: în jurul cercului apare o rețea de puncte întinsă pe suprafață. E verde-lime când masa e recunoscută sigur și albă când e doar estimată. Prima recunoaștere vibrează scurt.
 - **Cu degetul**: tragi cercul unde vrei; lăsat, rămâne fix pe masă, chiar dacă miști telefonul.
 - **Butonul „Pune aici”** fixează jocul. Dacă ții telefonul nemișcat ~2 s pe o masă recunoscută, butonul se umple și jocul se pune singur. O atingere pe masă îl pune tot acolo unde ai atins.
-- **Mărimea jocului**: în AR tablele sunt mai mari decât cele reale (Jenga 1,5×, X și 0 1,6×, Ludo 1,3×; `GAME_ZOOM` în `app.js`), pentru că lângă mâna din fața camerei păreau de jucărie. Mărirea e un grup separat (`zoom`), nu scara lumii, așa că mâna reală rămâne la mărimea ei (`world.units()`). Mâna desenată peste joc e pe jumătate transparentă, ca să nu ascundă piesa pe care o muți.
+- **Mărimea jocului**: în AR tablele sunt mai mari decât cele reale (Jenga 1,5×, X și 0 1,6×, Ludo 1,3×; `GAME_ZOOM` în `app.js`), pentru că lângă mâna din fața camerei păreau de jucărie. Mărirea e un grup separat (`zoom`), nu scara lumii, așa că mâna reală rămâne la mărimea ei (`world.units()`). Mâna desenată peste joc e opacă, ca jocul să nu apară peste ea (la X și 0 e 70% opacă, ca să vezi căsuța de sub deget: `content.handOpacity`). Butoanele + / − din dreapta măresc sau micșorează jocul lin, cu 25% pe apăsare.
 - **După plasare, cu două degete**: muți jocul pe masă, îl rotești și îl mărești sau micșorezi (0,5×–3×); mărimea aleasă se ține minte pentru fiecare joc. Al doilea deget anulează ce începuse primul (ex.: aruncatul zarurilor cu degetul).
 
 **Mâna nu mai „ridică” jocul** (`handPoseGuard`): o mână mare în cadru are multe puncte care se mișcă, iar urmărirea crede că s-a mișcat telefonul, așa că tabla urca sau aluneca. Cât timp e o mână în cadru și telefonul stă pe loc (accelerometrul), poziția camerei rămâne cea de dinainte de mână (de acum 0,2 s, pentru că detecția mâinii vine cu întârziere). Rotația vine în continuare din urmărire, adică din giroscop. Când pleacă mâna, poziția revine lin. Mâinile se caută și cât alegi locul, nu doar după plasare. Cu mâna în cadru, cercul stă pe loc și jocul nu se pune singur. Pe AlvaAR mâna e acoperită în imaginea pentru SLAM și cât caută masa. Pe 8th Wall se acceptă doar suprafețe la nivelul mesei (|y| < 6 cm), pentru că mâna are și ea „suprafețe”, dar e mai sus.
@@ -219,6 +219,8 @@ Măsurat: 10/10 pe poze reale și 111/112 pe imagini stricate intenționat (blur
 **Viteză.** În scena AR căutăm o singură mână; la fiecare cadru cât ții zarul, din 2 în 2 pe rândul tău, din 4 în 4 când nu e rândul tău.
 
 Pe Android, WebXR nu dă acces la imaginea camerei, așa că modul „pe masă” folosește acum SLAM peste tot (WebXR rămâne cu `?webxr`).
+
+**Prinsul pieselor de Jenga cu mâna** (`app.js → jengaHands`): cu mâna reală nu nimerești niciodată fix o piesă de 2,5 cm. De aceea, piesa cea mai apropiată de raza dintre degetul mare și arătător (`jenga-view.js → nearest`, cu un mic avantaj pentru cele din față) se colorează albastru. Ciupești și prinzi piesa albastră, chiar dacă raza nu trece fix prin ea. Piesa rămâne aleasă 0,4 s cât închizi degetele. Ciupitul are două praguri: se prinde sub 0,6 lățimi de palmă între degete și scapă abia peste 0,95, ca piesa să nu-ți cadă din degete când „pâlpâie” detecția.
 
 ## 9. Jenga: de ce *nu* e fizică adevărată
 
