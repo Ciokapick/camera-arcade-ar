@@ -431,6 +431,41 @@ function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isRe
   return off;
 }
 
+// Mâna mare în cadru „trage” urmărirea: motorul vede punctele de pe mână mișcându-se și crede că s-a mișcat
+// telefonul, iar jocul pare că se ridică / alunecă. Cât timp e o mână în cadru și telefonul stă pe loc
+// (accelerometrul), ținem poziția camerei de dinainte de mână (cu 0,2 s în urmă — detecția mâinii vine cu
+// întârziere) și luăm doar rotația, care vine din giroscop și nu e afectată. Când pleacă mâna, revenim lin.
+function handPoseGuard() {
+  let movedAt = 0, frozen = null, release = 0;
+  const history = [], from = new THREE.Vector3();
+  const onMotion = e => {
+    const a = e.acceleration;
+    if (a?.x != null && Math.hypot(a.x, a.y, a.z) > 0.9) movedAt = performance.now();
+  };
+  addEventListener('devicemotion', onMotion);
+  return {
+    // position: poziția camerei dată de urmărire, corectată pe loc
+    apply(position, handInView) {
+      const now = performance.now();
+      if (!frozen) {
+        history.push({ t: now, p: position.clone() });
+        while (history.length > 2 && now - history[1].t > 200) history.shift();
+      }
+      if (handInView && now - movedAt > 400) {
+        frozen ??= (history[0]?.p ?? position).clone();
+        position.copy(frozen);
+        return;
+      }
+      if (frozen) { from.copy(frozen); frozen = null; release = 1; history.length = 0; }
+      if (release > 0) {
+        release = Math.max(0, release - 1 / 30);
+        position.lerp(from, release * release);
+      }
+    },
+    close() { removeEventListener('devicemotion', onMotion); },
+  };
+}
+
 // Alegerea locului și mutarea jocului, pe masă (8th Wall și AlvaAR):
 //  - cât cauți: cercul stă în centrul ecranului; tras cu degetul, rămâne unde l-ai dus;
 //    „Pune aici” (sau o atingere) îl fixează; ținut nemișcat ~2 s pe masă, se pune singur;
@@ -729,6 +764,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
 
   let state = 'scanning', frameCount = 0, last = 0, closed = false, focal = H, failed = null;
   const stats = { frames: 0, poses: 0, engine: 'xr8' };
+  const guard = handPoseGuard();
   let wasLimited = false;
   const go = next => { state = next; setState(next); };
   go('scanning');
@@ -800,6 +836,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
         focal = r.intrinsics[5] * H / 2;
         camera.position.set(r.position.x, r.position.y, r.position.z);
         camera.quaternion.set(r.rotation.x, r.rotation.y, r.rotation.z, r.rotation.w);
+        guard.apply(camera.position, state === 'placed' && lastHands.length > 0);
         camera.updateMatrixWorld(true);
         stats.poses += 1;
         if (state === 'scanning' && r.trackingStatus === 'NORMAL') {
@@ -851,7 +888,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
       onStart: () => { clearTimeout(timer); setOrigin(); resolve(); },
     });
     try { XR8.run({ canvas: feed, glContextConfig: { preserveDrawingBuffer: true } }); } catch (error) { clearTimeout(timer); reject(error); }
-  }).catch(error => { closed = true; XR8.stop(); XR8.clearCameraPipelineModules(); offTap(); control.close(); throw error; });
+  }).catch(error => { closed = true; XR8.stop(); XR8.clearCameraPipelineModules(); offTap(); control.close(); guard.close(); throw error; });
 
   return {
     camera,
@@ -868,6 +905,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
       closed = true;
       offTap();
       control.close();
+      guard.close();
       XR8.stop();
       XR8.clearCameraPipelineModules();
       occlusion?.remove();
@@ -988,6 +1026,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
     },
   });
   let lost = false;
+  const guard = handPoseGuard();
 
   function loop(time) {
     raf = requestAnimationFrame(loop);
@@ -1011,6 +1050,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       // netezim puțin tremuratul (o urmărire perfectă la fiecare cadru nu există); un salt mare = imediat
       if (camera.position.distanceTo(smoothP) > 0.3 * Math.max(0.01, camera.position.distanceTo(anchor.position))) { camera.position.copy(smoothP); camera.quaternion.copy(smoothQ); }
       else { camera.position.lerp(smoothP, 0.6); camera.quaternion.slerp(smoothQ, 0.6); }
+      guard.apply(camera.position, state === 'placed' && lastHands.length > 0);
       if (state === 'scanning' && frameCount % 5 === 0) {
         stats.planeTries += 1;
         const planePose = alva.findPlane();
@@ -1055,6 +1095,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       offTap();
       control.close();
       removeEventListener('deviceorientation', onOrientation);
+      guard.close();
       video.srcObject?.getTracks().forEach(track => track.stop());
       video.pause();
       video.remove();

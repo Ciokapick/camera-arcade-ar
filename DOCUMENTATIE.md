@@ -158,6 +158,8 @@ Alegerea locului e mai ușoară (`placementControl`, pentru 8th Wall și AlvaAR)
 - **Mărimea jocului**: în AR tablele sunt mai mari decât cele reale (Jenga 1,5×, X și 0 1,6×, Ludo 1,3×; `GAME_ZOOM` în `app.js`), pentru că lângă mâna din fața camerei păreau de jucărie. Mărirea e un grup separat (`zoom`), nu scara lumii, așa că mâna reală rămâne la mărimea ei (`world.units()`). Mâna desenată peste joc e pe jumătate transparentă, ca să nu ascundă piesa pe care o muți.
 - **După plasare, cu două degete**: muți jocul pe masă, îl rotești și îl mărești sau micșorezi (0,5×–3×); mărimea aleasă se ține minte pentru fiecare joc. Al doilea deget anulează ce începuse primul (ex.: aruncatul zarurilor cu degetul).
 
+**Mâna nu mai „ridică” jocul** (`handPoseGuard`): o mână mare în cadru are multe puncte care se mișcă, iar urmărirea crede că s-a mișcat telefonul, așa că tabla urca sau aluneca. Cât timp e o mână în cadru și telefonul stă pe loc (accelerometrul), poziția camerei rămâne cea de dinainte de mână (de acum 0,2 s, pentru că detecția mâinii vine cu întârziere). Rotația vine în continuare din urmărire, adică din giroscop. Când pleacă mâna, poziția revine lin.
+
 Licența cere să păstrăm mențiunea Niantic Spatial și trimiterea la licență — e în lobby, jos.
 
 ### SLAM cu AlvaAR (rezerva), explicat
