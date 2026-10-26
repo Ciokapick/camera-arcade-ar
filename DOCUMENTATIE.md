@@ -155,7 +155,8 @@ Alegerea locului e mai ușoară (`placementControl`, pentru 8th Wall și AlvaAR)
 - **Masa recunoscută**: în jurul cercului apare o rețea de puncte întinsă pe suprafață. E verde-lime când masa e recunoscută sigur și albă când e doar estimată. Prima recunoaștere vibrează scurt.
 - **Cu degetul**: tragi cercul unde vrei; lăsat, rămâne fix pe masă, chiar dacă miști telefonul.
 - **Butonul „Pune aici”** fixează jocul. Dacă ții telefonul nemișcat ~2 s pe o masă recunoscută, butonul se umple și jocul se pune singur. O atingere pe masă îl pune tot acolo unde ai atins.
-- **După plasare, cu două degete**: muți jocul pe masă, îl rotești și îl mărești sau micșorezi (0,4×–2,5×). Al doilea deget anulează ce începuse primul (ex.: aruncatul zarurilor cu degetul).
+- **Mărimea jocului**: în AR tablele sunt mai mari decât cele reale (Jenga 1,5×, X și 0 1,6×, Ludo 1,3×; `GAME_ZOOM` în `app.js`), pentru că lângă mâna din fața camerei păreau de jucărie. Mărirea e un grup separat (`zoom`), nu scara lumii, așa că mâna reală rămâne la mărimea ei (`world.units()`). Mâna desenată peste joc e pe jumătate transparentă, ca să nu ascundă piesa pe care o muți.
+- **După plasare, cu două degete**: muți jocul pe masă, îl rotești și îl mărești sau micșorezi (0,5×–3×); mărimea aleasă se ține minte pentru fiecare joc. Al doilea deget anulează ce începuse primul (ex.: aruncatul zarurilor cu degetul).
 
 Licența cere să păstrăm mențiunea Niantic Spatial și trimiterea la licență — e în lobby, jos.
 
