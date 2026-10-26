@@ -68,7 +68,25 @@ function createWorld(content) {
   const ring = new THREE.Mesh(new THREE.RingGeometry(r * 0.96, r, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0.9, depthWrite: false }));
   // un val care pleacă din centru: arată că cercul e „viu” și urmărește masa
   const pulse = new THREE.Mesh(new THREE.RingGeometry(r * 0.9, r, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0, depthWrite: false }));
-  reticle.add(grid, ring, pulse, new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0.12, depthWrite: false })));
+  const disk = new THREE.Mesh(new THREE.CircleGeometry(r, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0.12, depthWrite: false }));
+  // „masa recunoscută”: o rețea de puncte întinsă pe suprafață în jurul cercului, care se stinge spre margini
+  const dotsCanvas = document.createElement('canvas');
+  dotsCanvas.width = dotsCanvas.height = 512;
+  const dg = dotsCanvas.getContext('2d');
+  for (let x = 16; x < 512; x += 32) for (let y = 16; y < 512; y += 32) {
+    const d = Math.hypot(x - 256, y - 256) / 256;
+    if (d > 1) continue;
+    dg.fillStyle = `rgba(255,255,255,${(1 - d) ** 1.5})`;
+    dg.beginPath();
+    dg.arc(x, y, 3, 0, Math.PI * 2);
+    dg.fill();
+  }
+  const dots = new THREE.Mesh(new THREE.PlaneGeometry(r * 5, r * 5).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(dotsCanvas), color: LIME, transparent: true, opacity: 0.6, depthWrite: false }));
+  dots.position.y = -0.0002;
+  reticle.add(dots, grid, ring, pulse, disk);
+  // lime = suprafață recunoscută sigur; alb = deocamdată doar estimată
+  const tinted = [grid.material, ring.material, pulse.material, disk.material, dots.material];
+  const setSure = sure => tinted.forEach(m => m.color.set(sure ? LIME : 0xffffff));
   // între ancoră și joc: aici animăm așezarea, fără să atingem jocul în sine
   const stand = new THREE.Group();
   // umbră moale de contact sub joc: îl „lipește” de masa reală (umbra soarelui singură e prea fină)
@@ -131,7 +149,7 @@ function createWorld(content) {
     blob.material.opacity = t;
     if (t === 1) { drop = null; stand.scale.setScalar(1); stand.position.y = 0; }
   };
-  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, tick };
+  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, tick, setSure };
 }
 
 // Rotește conținutul ca direcția `facing` să fie spre cameră (ex.: culoarea ta în fața ta)
@@ -334,11 +352,12 @@ const ndcFromEvent = (event, element) => {
 
 /**
  * Deschide scena. Întoarce { mode, close(), replace(), cameraLocal() }.
- * status(text) / setState(state) informează interfața; onTap() = atingere care nu a nimerit un pion.
+ * status(text) / setState(state) informează interfața; onTap() = atingere care nu a nimerit un pion;
+ * placing(p): cât s-a umplut așezarea automată (0..1), null = nu alegi locul acum. stage.placeHere() = „Pune aici”.
  */
-export async function openStage({ root, overlay, mode, content, status, setState = () => {}, onTap = () => {}, videoUrl }) {
+export async function openStage({ root, overlay, mode, content, status, setState = () => {}, onTap = () => {}, placing = () => {}, videoUrl }) {
   const world = createWorld(content);
-  const common = { root, overlay, content, world, status, setState, onTap, videoUrl };
+  const common = { root, overlay, content, world, status, setState, onTap, placing, videoUrl };
   const stage = mode === 'webxr' ? await startWebXR(common)
     : mode === 'slam' ? await startTable(common)
       : mode === 'marker' ? await startMarker(common)
@@ -356,7 +375,15 @@ function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isRe
   const raycaster = new THREE.Raycaster();
   const ray = event => raycaster.setFromCamera(ndcFromEvent(event, root), camera);
   let down = null, dragging = false;
+  const fingers = new Set();
   const onDown = event => {
+    fingers.add(event.pointerId);
+    // al doilea deget = gest pe masă (mutat / rotit / mărit jocul), nu joc: anulăm ce începuse primul
+    if (fingers.size > 1) {
+      if (dragging) { dragging = false; content.drag.cancel ? content.drag.cancel() : content.drag.end(); }
+      down = null;
+      return;
+    }
     down = { x: event.clientX, y: event.clientY };
     if (event.target.closest('button, input, a, .panel') || !content.drag || !canDrag(event)) return;
     ray(event);
@@ -370,6 +397,7 @@ function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isRe
     content.drag.move(raycaster, event);
   };
   const onUp = event => {
+    fingers.delete(event.pointerId);
     if (dragging) { dragging = false; content.drag.end(event); return; }
     if (event.target.closest('button, input, a, .panel')) return;
     if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 12) return; // a fost tras, nu atins
@@ -377,7 +405,7 @@ function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isRe
     ray(event);
     if (!content.pick?.(raycaster)) onTap();
   };
-  const onCancel = () => { if (dragging) { dragging = false; content.drag.end(); } };
+  const onCancel = event => { fingers.delete(event.pointerId); if (dragging) { dragging = false; content.drag.end(); } };
   root.addEventListener('pointerdown', onDown);
   root.addEventListener('pointermove', onMove);
   root.addEventListener('pointerup', onUp);
@@ -390,6 +418,103 @@ function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isRe
   };
   off.dragging = () => dragging;
   return off;
+}
+
+// Alegerea locului și mutarea jocului, pe masă (8th Wall și AlvaAR):
+//  - cât cauți: cercul stă în centrul ecranului; tras cu degetul, rămâne unde l-ai dus;
+//    „Pune aici” (sau o atingere) îl fixează; ținut nemișcat ~2 s pe masă, se pune singur;
+//  - după: cu două degete muți jocul pe masă, îl rotești și îl mărești / micșorezi.
+// hit(x, y) ∈ [0, 1] → { point, sure } sau null; place(point); progress(0..1 | null) pentru buton.
+const AUTO_PLACE_S = 1.8;
+function placementControl({ root, camera, world, hit, place, progress, status, getState, center = [0.5, 0.5] }) {
+  const { anchor, setScale } = world;
+  // pinned: punctul de pe ecran cât tragi cercul; dropped: locul de pe masă unde l-ai lăsat (nu mai fuge cu telefonul)
+  let pinned = null, dropped = null, hold = 0, sure = false, last = 0, gesture = null, baseScale = 1, hinted = false;
+  const history = [], pointers = new Map(), raycaster = new THREE.Raycaster();
+  const rel = e => { const r = root.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+  const onTable = e => {
+    raycaster.setFromCamera(ndcFromEvent(e, root), camera);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0).applyQuaternion(anchor.quaternion), anchor.position);
+    return raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+  };
+  const snapshot = () => {
+    const [a, b] = [...pointers.values()], pa = onTable(a), pb = onTable(b);
+    return pa && pb ? { mid: pa.add(pb).multiplyScalar(0.5), angle: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX), dist: Math.max(1, Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY)) } : null;
+  };
+  const onDown = e => {
+    if (e.target.closest?.('button, input, a, .panel')) return;
+    pointers.set(e.pointerId, e);
+    if (getState() === 'found' && pointers.size === 1) { pinned = rel(e); dropped = null; hold = 0; }
+    if (getState() === 'placed' && pointers.size === 2) gesture = snapshot();
+  };
+  const onMove = e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, e);
+    if (getState() === 'found' && pointers.size === 1) { pinned = rel(e); hold = 0; }
+    if (!gesture || pointers.size !== 2) return;
+    const now = snapshot();
+    if (!now) return;
+    anchor.position.add(now.mid.clone().sub(gesture.mid));
+    anchor.rotateY(-(now.angle - gesture.angle));
+    setScale(Math.min(baseScale * 2.5, Math.max(baseScale * 0.4, anchor.scale.x * now.dist / gesture.dist)));
+    anchor.updateMatrixWorld(true);
+    gesture = snapshot();
+  };
+  const onUp = e => {
+    if (!pointers.delete(e.pointerId)) return;
+    if (pointers.size < 2) gesture = null;
+    if (pinned && getState() === 'found' && world.reticle.visible) dropped = anchor.position.clone();
+    pinned = null;
+  };
+  root.addEventListener('pointerdown', onDown);
+  root.addEventListener('pointermove', onMove);
+  root.addEventListener('pointerup', onUp);
+  root.addEventListener('pointercancel', onUp);
+  return {
+    // un pas pe cadru, cât timp alegi locul
+    frame() {
+      const now = performance.now(), dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
+      last = now;
+      if (getState() !== 'found') { progress(null); history.length = 0; return; }
+      const h = dropped ? { point: dropped, sure } : hit(...(pinned ?? center));
+      world.follow(h?.point ?? null, null, dt);
+      world.setSure(!!h?.sure);
+      if (h?.sure && !sure) {
+        sure = true;
+        navigator.vibrate?.(20);
+        status('Am recunoscut masa ✓ Trage cercul cu degetul unde vrei, apoi „Pune aici”.');
+      }
+      history.push({ t: now, p: anchor.position.clone() });
+      while (history.length && now - history[0].t > 700) history.shift();
+      // se pune singur doar pe o suprafață recunoscută sigur
+      const still = !!h?.sure && pointers.size === 0 && history.length > 8 && history.every(x => x.p.distanceTo(anchor.position) < 0.012 * anchor.scale.x);
+      hold = still ? hold + dt / AUTO_PLACE_S : Math.max(0, hold - dt * 1.5);
+      progress(hold);
+      if (hold >= 1) this.placeHere();
+    },
+    placeHere() {
+      if (getState() !== 'found' || !world.reticle.visible) return;
+      hold = 0;
+      place(anchor.position.clone());
+    },
+    // după fixare: ține minte mărimea de bază (gesturile o pot schimba doar între 0,4× și 2,5×) și arată o dată ce poți face
+    placed() {
+      baseScale = anchor.scale.x;
+      pinned = dropped = null;
+      hold = 0;
+      progress(null);
+      if (!hinted) { hinted = true; status('Gata! Cu două degete muți, rotești și mărești jocul.'); setTimeout(() => { if (getState() === 'placed') status(''); }, 3500); }
+    },
+    reset() { pinned = dropped = null; hold = 0; sure = false; history.length = 0; },
+    get gesturing() { return pointers.size > 1; },
+    close() {
+      progress(null);
+      root.removeEventListener('pointerdown', onDown);
+      root.removeEventListener('pointermove', onMove);
+      root.removeEventListener('pointerup', onUp);
+      root.removeEventListener('pointercancel', onUp);
+    },
+  };
 }
 
 // ---------------------------------------------------------------- screen: fără AR
@@ -483,17 +608,18 @@ async function startWebXR({ overlay, content, world, status, setState, onTap }) 
   const raycaster = new THREE.Raycaster();
   const cameraWorld = () => renderer.xr.getCamera().getWorldPosition(new THREE.Vector3());
 
+  const placeHere = () => {
+    if (state !== 'found') return;
+    go('placed');
+    reticle.visible = false;
+    world.place();
+    content.group.visible = true;
+    faceCamera(content, cameraWorld());
+    status('');
+  };
   session.addEventListener('select', event => {
     if (state === 'scanning') return;
-    if (state === 'found') {
-      go('placed');
-      reticle.visible = false;
-      world.place();
-      content.group.visible = true;
-      faceCamera(content, cameraWorld());
-      status('');
-      return;
-    }
+    if (state === 'found') return placeHere();
     const pose = event.frame.getPose(event.inputSource.targetRaySpace, renderer.xr.getReferenceSpace());
     if (pose) {
       const m = new THREE.Matrix4().fromArray(pose.transform.matrix);
@@ -535,6 +661,7 @@ async function startWebXR({ overlay, content, world, status, setState, onTap }) 
     camera,
     cameraLocal: () => content.group.worldToLocal(cameraWorld()),
     replace() { content.group.visible = false; stableHits = 0; go('scanning'); status('Caut din nou suprafața…'); },
+    placeHere,
     close() { closed = true; session.end().catch(() => {}); },
   };
 }
@@ -569,7 +696,7 @@ function loadXR8() {
   return xr8Promise;
 }
 
-async function startXR8({ root, content, world, status, setState, onTap }) {
+async function startXR8({ root, content, world, status, setState, onTap, placing }) {
   status('Încarc motorul de tracking (8th Wall)…');
   const XR8 = await loadXR8();
   await XR8.loadChunk?.('slam');
@@ -591,6 +718,7 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
 
   let state = 'scanning', frameCount = 0, last = 0, closed = false, focal = H, failed = null;
   const stats = { frames: 0, poses: 0, engine: 'xr8' };
+  let wasLimited = false;
   const go = next => { state = next; setState(next); };
   go('scanning');
   status('Îndreaptă camera spre masă și mișc-o puțin…');
@@ -618,9 +746,11 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
   const hitAt = (x, y) => {
     const hits = XR8.XrController.hitTest(x, y, ['ESTIMATED_SURFACE', 'DETECTED_SURFACE']);
     const hit = hits.find(h => h.type === 'DETECTED_SURFACE') ?? hits.find(h => h.type === 'ESTIMATED_SURFACE');
-    if (hit && Number.isFinite(hit.position.x)) return new THREE.Vector3(hit.position.x, hit.position.y, hit.position.z);
+    if (hit && Number.isFinite(hit.position.x)) return { point: new THREE.Vector3(hit.position.x, hit.position.y, hit.position.z), sure: true };
     ray.setFromCamera(new THREE.Vector2(x * 2 - 1, 1 - y * 2), camera);
-    return ray.ray.intersectPlane(tablePlane, new THREE.Vector3());
+    // nu prea departe (spre orizont, planul y = 0 dă puncte la metri distanță)
+    const point = ray.ray.intersectPlane(tablePlane, new THREE.Vector3());
+    return point && point.distanceTo(camera.position) < 2.5 ? { point, sure: false } : null;
   };
   const place = point => {
     world.place(point);
@@ -632,13 +762,15 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
     faceCamera(content, camera.position);
     go('placed');
     status('');
+    control.placed();
   };
+  const control = placementControl({ root, camera, world, hit: hitAt, place, progress: placing, status, getState: () => state, center: [0.5, 0.55] });
 
   const offTap = tapHandler(root, camera, content, world, onTap, event => {
     if (state === 'scanning') { status('Încă pornesc urmărirea — mișcă puțin telefonul, cu masa în cadru.'); return false; }
     if (state === 'found') {
       const rect = root.getBoundingClientRect();
-      const point = hitAt((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height) ?? anchor.position.clone();
+      const point = hitAt((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height)?.point ?? anchor.position.clone();
       place(point);
       return false;
     }
@@ -663,15 +795,15 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
           go('found');
           reticle.visible = true;
           anchor.visible = true;
-          status('Atinge masa unde vrei să pui jocul.');
+          status('Țintește masa: cercul arată unde va sta jocul. Îl poți trage cu degetul.');
         }
         if (state === 'found') {
-          // nu prea departe (spre orizont, planul y = 0 dă puncte la metri distanță)
-          const point = hitAt(0.5, 0.55);
-          world.follow(point && point.distanceTo(camera.position) < 2.5 ? point : null);
           anchor.quaternion.identity();
+          control.frame();
         }
-        if (state === 'placed') status(r.trackingStatus === 'LIMITED' ? 'Urmărirea e slabă — mișcă telefonul mai încet, cu masa în cadru.' : '');
+        // mesajul doar când se schimbă (altfel ar șterge pe loc indicațiile de după plasare)
+        const limited = state === 'placed' && r.trackingStatus === 'LIMITED';
+        if (limited !== wasLimited) { wasLimited = limited; status(limited ? 'Urmărirea e slabă — mișcă telefonul mai încet, cu masa în cadru.' : ''); }
       }
     },
     onRender: () => {
@@ -708,7 +840,7 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
       onStart: () => { clearTimeout(timer); setOrigin(); resolve(); },
     });
     try { XR8.run({ canvas: feed, glContextConfig: { preserveDrawingBuffer: true } }); } catch (error) { clearTimeout(timer); reject(error); }
-  }).catch(error => { closed = true; XR8.stop(); XR8.clearCameraPipelineModules(); offTap(); throw error; });
+  }).catch(error => { closed = true; XR8.stop(); XR8.clearCameraPipelineModules(); offTap(); control.close(); throw error; });
 
   return {
     camera,
@@ -716,13 +848,15 @@ async function startXR8({ root, content, world, status, setState, onTap }) {
     get state() { return state; },
     get failed() { return failed; },
     cameraLocal: () => content.group.worldToLocal(camera.position.clone()),
-    replace() { content.group.visible = false; reticle.visible = true; go('found'); status('Atinge masa unde vrei să pui jocul.'); },
+    replace() { content.group.visible = false; reticle.visible = true; control.reset(); go('found'); status('Țintește masa sau trage cercul cu degetul, apoi „Pune aici”.'); },
+    placeHere: () => control.placeHere(),
     // pe iPhone nu merg două camere deodată (ex.: pariul cu bancnote): oprim 8th Wall cât e nevoie
     pause() { XR8.pause(); },
     resume() { XR8.resume(); },
     close() {
       closed = true;
       offTap();
+      control.close();
       XR8.stop();
       XR8.clearCameraPipelineModules();
       occlusion?.remove();
@@ -742,7 +876,7 @@ function applyAlvaPose(pose, quaternion, position) {
   position.set(pose[12], -pose[13], -pose[14]);
 }
 
-async function startSlam({ root, content, world, status, setState, onTap, videoUrl }) {
+async function startSlam({ root, content, world, status, setState, onTap, videoUrl, placing }) {
   status('Pornesc camera…');
   const video = await openSource(videoUrl);
   status('Încarc motorul de tracking (~4 MB)…');
@@ -804,7 +938,6 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
     surface.setFromNormalAndCoplanarPoint(normal, p);
     stats.normalSource = up ? 'gyro' : 'alva';
     go('found');
-    status('Am găsit masa! Atinge ecranul unde vrei să pui jocul.');
   }
 
   const handsTracking = handTracking(canvas, camera, L.focal, content);
@@ -817,20 +950,33 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
   const offTap = tapHandler(root, camera, content, world, onTap, event => {
     if (state === 'scanning') { status('Încă nu am găsit masa — mișcă telefonul încet, cu masa în cadru.'); return false; }
     if (state === 'found') {
-      // jocul se fixează exact unde ai atins; scara SLAM-ului (care nu știe metri) vine din distanța presupusă
-      const hit = pointOnSurface(ndcFromEvent(event, root));
-      world.place(hit);
-      setScale(camera.position.distanceTo(anchor.position) / ASSUMED_DISTANCE);
-      reticle.visible = false;
-      content.group.visible = true;
-      anchor.updateMatrixWorld(true);
-      faceCamera(content, camera.position);
-      go('placed');
-      status('');
+      // jocul se fixează exact unde ai atins
+      place(pointOnSurface(ndcFromEvent(event, root)));
       return false;
     }
     return true;
   }, () => state === 'placed');
+  // scara SLAM-ului (care nu știe metri) vine din distanța presupusă
+  function place(point) {
+    world.place(point);
+    setScale(camera.position.distanceTo(anchor.position) / ASSUMED_DISTANCE);
+    reticle.visible = false;
+    content.group.visible = true;
+    anchor.updateMatrixWorld(true);
+    faceCamera(content, camera.position);
+    go('placed');
+    status('');
+    control.placed();
+  }
+  // cât alegi locul, cercul stă pe planul găsit, sub centrul ecranului (sau unde l-ai tras)
+  const control = placementControl({
+    root, camera, world, place, progress: placing, status, getState: () => state,
+    hit: (x, y) => {
+      const point = pointOnSurface(new THREE.Vector2(x * 2 - 1, 1 - y * 2));
+      return point && point.distanceTo(camera.position) < 8 * ASSUMED_DISTANCE ? { point, sure: true } : null;
+    },
+  });
+  let lost = false;
 
   function loop(time) {
     raf = requestAnimationFrame(loop);
@@ -861,9 +1007,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
         if (planePose && planePose.every(Number.isFinite)) foundPlane(planePose);
       }
       if (state === 'found') {
-        // cât alegi locul, cercul urmărește centrul ecranului pe suprafață
-        const hit = pointOnSurface(new THREE.Vector2(0, 0));
-        world.follow(hit && hit.distanceTo(camera.position) < 8 * ASSUMED_DISTANCE ? hit : null, null, dt);
+        control.frame();
         if (reticle.visible) setScale(camera.position.distanceTo(anchor.position) / ASSUMED_DISTANCE);
       }
       anchor.visible = state !== 'scanning';
@@ -871,10 +1015,9 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       anchor.visible = false;
       ctx.fillStyle = '#fff';
       for (const point of alva.getFramePoints()) ctx.fillRect(point.x - 1, point.y - 1, 3, 3);
-      if (everTracked && state === 'placed') status('Am pierdut urmărirea — revino încet cu camera spre masă.');
-      else if (state === 'placed') status('');
+      if (everTracked && state === 'placed' && !lost) { lost = true; status('Am pierdut urmărirea — revino încet cu camera spre masă.'); }
     }
-    if (pose && state === 'placed') status('');
+    if (pose && lost) { lost = false; status(''); }
     // mâinile (pe telefon tracking-ul + mâinile deodată sunt grele, așa că nu la fiecare cadru — vezi handEvery)
     if (handsTracking && state === 'placed' && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame();
     world.tick(dt);
@@ -894,10 +1037,12 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
     stats,
     get state() { return state; },
     cameraLocal: () => content.group.worldToLocal(camera.position.clone()),
-    replace() { content.group.visible = false; reticle.visible = true; anchor.visible = false; go('scanning'); status('Caut din nou masa… mișcă telefonul încet.'); },
+    replace() { content.group.visible = false; reticle.visible = true; anchor.visible = false; control.reset(); go('scanning'); status('Caut din nou masa… mișcă telefonul încet.'); },
+    placeHere: () => control.placeHere(),
     close() {
       cancelAnimationFrame(raf);
       offTap();
+      control.close();
       removeEventListener('deviceorientation', onOrientation);
       video.srcObject?.getTracks().forEach(track => track.stop());
       video.pause();

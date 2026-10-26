@@ -275,7 +275,7 @@ function startStageView(v) {
   if (v.game === 'barbut') {
     const group = new THREE.Group();
     const dice = createDice(group, { count: 2, size: 0.035 });
-    v.content = { group, dice, footprint: 0.16, groundShadow: false, get busy() { return dice.busy; }, drag: { start: flickStart, move: flickMove, end: flickEnd }, hands: diceHands, holes: heldDiceHole(0.07), get handsFast() { return myDiceTurn(); }, get handsActive() { return myDiceTurn(); }, update: dt => { if (dice.update(dt)) settled(); } };
+    v.content = { group, dice, footprint: 0.16, groundShadow: false, get busy() { return dice.busy; }, drag: { start: flickStart, move: flickMove, end: flickEnd, cancel: () => { flick = null; } }, hands: diceHands, holes: heldDiceHole(0.07), get handsFast() { return myDiceTurn(); }, get handsActive() { return myDiceTurn(); }, update: dt => { botShake(v, dt); if (dice.update(dt)) settled(); } };
   } else if (v.game === 'xo') {
     const cube = createXO();
     v.xo = cube;
@@ -317,6 +317,7 @@ function startStageView(v) {
       get handsFast() { return myLudoRoll(); },
       get handsActive() { const L = room?.state.ludo; return !!L && ludo.current(L) === me()?.color; },
       update: dt => {
+        botShake(v, dt);
         if (board.update(dt)) settled();
         syncBoard();
       },
@@ -347,9 +348,17 @@ async function openMode(mode) {
       status: text => { if (view === v) $('#ar-status').textContent = text; },
       // WebXR închis din sistem → alegi din nou din butonul cu cubul
       setState: s => {
+        // WebXR n-are așezare automată: doar butonul
+        if (real === 'webxr' && view === v) { $('#place-here').hidden = s !== 'found'; document.body.classList.toggle('placing', s === 'found'); }
         if (s === 'closed' && view === v && v.stage === stage) { v.stage = null; v.mode = null; $('#ar-status').textContent = 'AR-ul s-a închis — apasă butonul cu cubul, sus.'; }
       },
       onTap: tapAction,
+      placing: p => {
+        if (view !== v && p !== null) return; // ascunderea merge mereu (scena se poate închide după ce ai ieșit din joc)
+        $('#place-here').hidden = p === null;
+        $('#place-here').style.setProperty('--p', `${Math.round((p ?? 0) * 100)}%`);
+        document.body.classList.toggle('placing', p !== null);
+      },
     });
     if (view !== v || v.openToken !== token) { stage.close(); return; }
     v.stage = stage;
@@ -382,6 +391,7 @@ $('#sheet').addEventListener('click', event => {
   if (mode === 'table') window.DeviceOrientationEvent?.requestPermission?.().catch(() => {});
   openMode(mode);
 });
+$('#place-here').addEventListener('click', () => view?.stage?.placeHere?.());
 $('#replace-table').addEventListener('click', () => { $('#sheet').hidden = true; view?.stage?.replace(); });
 // în WebXR, atingerile pe butoane nu trebuie să ajungă și la scenă
 $('#ui').addEventListener('beforexrselect', event => { if (event.target.closest('.panel, button')) event.preventDefault(); });
@@ -399,8 +409,64 @@ function animateNewRoll(state) {
     const angle = (roll.seq * 2.399) % (Math.PI * 2);
     from = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
   }
-  const f = roll.fling, launch = f?.start ? { start: new THREE.Vector3(...f.start), vel: new THREE.Vector3(...f.vel), dice: f.dice } : null;
+  const f = roll.fling;
+  let launch = f?.start ? { start: new THREE.Vector3(...f.start), vel: new THREE.Vector3(...f.vel), dice: f.dice } : null;
+  // calculatorul le aruncă din „mâna” în care le-a agitat, spre mijlocul mesei
+  const shake = view.botShake;
+  if (!launch && roller?.bot && shake?.on && shake.bot.id === roller.id) {
+    const start = view.content.dice.meshes.reduce((sum, m) => sum.add(m.position), new THREE.Vector3()).divideScalar(view.content.dice.meshes.length);
+    const vel = new THREE.Vector3(-start.x, 0, -start.z).setLength(state.game === 'ludo' ? 0.35 : 0.55);
+    vel.y = 0.3;
+    launch = { start, vel, dice: view.content.dice.heldState() };
+    shake.on = false;
+  }
   view.content.dice.throw({ values: roll.values, seed: roll.seq * 7919 + 17, from, power: f?.power, launch });
+}
+
+// Calculatorul „ia” zarurile și le agită ~1,5 s înainte să arunce (gazda așteaptă BOT_SHAKE_MS),
+// ca să vezi că urmează el: zarurile plutesc în partea lui de masă, se scutură și clănțăne.
+const BOT_PICKUP_MS = 1200, BOT_IDLE_MS = 500;
+function botAboutToRoll(state) {
+  if (state?.game === 'barbut') {
+    const b = state.barbut, bot = state.players.find(p => p.id === barbutTurn(b) && p.bot);
+    return bot && !(b.money && !(bot.id in b.bets)) ? bot : null;
+  }
+  if (state?.game === 'ludo' && state.ludo.phase === 'roll') return state.players.find(p => p.bot && p.color === ludo.current(state.ludo)) ?? null;
+  return null;
+}
+function botShake(v, dt) {
+  const dice = v.content.dice, state = room?.state, bot = botAboutToRoll(state), now = performance.now();
+  const key = bot ? `${bot.id}:${state.seq}` : null;
+  if (v.botShake?.key !== key) {
+    if (v.botShake?.on && !dice.busy) dice.hold(null);
+    v.botShake = key ? { key, bot, since: now, idle: 0, on: false, rattle: 0 } : null;
+  }
+  const S = v.botShake;
+  if (!S) return;
+  S.idle = dice.busy ? 0 : S.idle + dt * 1000;
+  if (!S.on) {
+    if (now - S.since < BOT_PICKUP_MS || S.idle < BOT_IDLE_MS) return;
+    S.on = true;
+    S.at = botHandPoint(v, bot, state);
+    $('#info-small').textContent = `${bot.name} agită zarurile…`;
+  }
+  // tremurat mai tare spre final, ca și cum s-ar pregăti să arunce
+  const t = (now - S.since - BOT_PICKUP_MS) / 1000;
+  const wobble = new THREE.Vector3(Math.sin(t * 17) * 0.012, Math.abs(Math.sin(t * 11)) * 0.015, Math.cos(t * 13) * 0.008).multiplyScalar(state.game === 'ludo' ? 0.6 : 1);
+  dice.hold(S.at.clone().add(wobble), true);
+  S.rattle -= dt;
+  if (S.rattle <= 0) { sound.clack(0.2 + Math.random() * 0.25); S.rattle = 0.1 + Math.random() * 0.14; }
+}
+// unde „ține” calculatorul zarurile: la Ludo în dreptul locului lui, la zaruri vizavi de tine (ca să le vezi)
+function botHandPoint(v, bot, state) {
+  if (state.game === 'ludo') return SEAT[bot.color].clone().multiplyScalar(BOARD_SIZE * 0.36).setY(TOP_Y + 0.05);
+  const cam = v.stage?.cameraLocal() ?? new THREE.Vector3(0, 0.4, 0.4);
+  const away = new THREE.Vector3(-cam.x, 0, -cam.z);
+  if (away.lengthSq() < 1e-6) away.set(0, 0, -1);
+  away.normalize();
+  const bots = state.players.filter(p => p.bot), i = bots.findIndex(p => p.id === bot.id);
+  const side = new THREE.Vector3(-away.z, 0, away.x).multiplyScalar((i - (bots.length - 1) / 2) * 0.09);
+  return away.multiplyScalar(0.11).add(side).setY(0.07);
 }
 
 function mainAction() {

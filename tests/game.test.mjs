@@ -1,7 +1,7 @@
 // node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRoom, reduce, hostTimers, barbutTurn, rpsOutcome, RPS_COUNTDOWN_MS } from '../game.js';
+import { newRoom, reduce, hostTimers, barbutTurn, rpsOutcome, RPS_COUNTDOWN_MS, BOT_SHAKE_MS } from '../game.js';
 import { botMove } from '../ludo.js';
 
 const room = () => {
@@ -302,7 +302,8 @@ test('zaruri: calculatorul așteaptă să se oprească zarurile celui dinainte',
   const memo = {};
   hostTimers(r, 0, memo);
   assert.deepEqual(hostTimers(r, 2000, memo), [], 'zarurile încă se rostogolesc');
-  const [roll] = hostTimers(r, 3500, memo);
+  assert.deepEqual(hostTimers(r, 3500, memo), [], 'calculatorul încă agită zarurile');
+  const [roll] = hostTimers(r, 3200 + BOT_SHAKE_MS + 100, memo);
   assert.equal(roll.action.type, 'roll');
 });
 

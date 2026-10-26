@@ -14,7 +14,7 @@ const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6,
 const STEP = 1 / 120;
 // la scară reală un zar de 3,5 cm se oprește în ~0,6 s — prea repede ca să-l urmărești; îl redăm cu încetinitorul:
 // zborul aproape normal (altfel pare că plutește), apoi tot mai încet spre final, când contează ce față iese
-const SPEED_FLIGHT = 0.8, SPEED_SETTLE = 0.42, SETTLE_FRAMES = 36;
+const SPEED_FLIGHT = 0.65, SPEED_SETTLE = 0.4, SETTLE_FRAMES = 36;
 // după oprire zarul se așază perfect pe o față (fizica îl lasă uneori ușor înclinat, iar fața de sus pare ambiguă)
 const SNAP_TIME = 0.18, APPEAR_TIME = 0.12;
 const UP = new THREE.Vector3(0, 1, 0);
