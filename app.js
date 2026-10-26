@@ -275,7 +275,7 @@ function startStageView(v) {
   if (v.game === 'barbut') {
     const group = new THREE.Group();
     const dice = createDice(group, { count: 2, size: 0.035 });
-    v.content = { group, dice, footprint: 0.16, get busy() { return dice.busy; }, drag: { start: flickStart, move: flickMove, end: flickEnd }, hands: diceHands, holes: heldDiceHole(0.07), get handsFast() { return myDiceTurn(); }, get handsActive() { return myDiceTurn(); }, update: dt => { if (dice.update(dt)) settled(); } };
+    v.content = { group, dice, footprint: 0.16, groundShadow: false, get busy() { return dice.busy; }, drag: { start: flickStart, move: flickMove, end: flickEnd }, hands: diceHands, holes: heldDiceHole(0.07), get handsFast() { return myDiceTurn(); }, get handsActive() { return myDiceTurn(); }, update: dt => { if (dice.update(dt)) settled(); } };
   } else if (v.game === 'xo') {
     const cube = createXO();
     v.xo = cube;

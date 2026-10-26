@@ -12,8 +12,11 @@ const FACE_VALUES = [3, 4, 1, 6, 2, 5];
 const AXES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].map(a => new THREE.Vector3(...a));
 const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
 const STEP = 1 / 120;
-// la scară reală un zar de 3,5 cm se oprește în ~0,6 s — prea repede ca să-l urmărești; îl redăm cu încetinitorul
-const PLAYBACK_SPEED = 0.55;
+// la scară reală un zar de 3,5 cm se oprește în ~0,6 s — prea repede ca să-l urmărești; îl redăm cu încetinitorul:
+// zborul aproape normal (altfel pare că plutește), apoi tot mai încet spre final, când contează ce față iese
+const SPEED_FLIGHT = 0.8, SPEED_SETTLE = 0.42, SETTLE_FRAMES = 36;
+// după oprire zarul se așază perfect pe o față (fizica îl lasă uneori ușor înclinat, iar fața de sus pare ambiguă)
+const SNAP_TIME = 0.18, APPEAR_TIME = 0.12;
 const UP = new THREE.Vector3(0, 1, 0);
 
 let materials;
@@ -82,7 +85,22 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     return mesh;
   });
 
-  let playback = null; // { frames, fix, t, values, done }
+  let playback = null; // { frames, fix, t, values, done, snap }
+  const qB = new THREE.Quaternion();
+  function snap(dt) {
+    let finished = true;
+    playback.snap.forEach((s, i) => {
+      s.t = Math.min(1, s.t + dt / SNAP_TIME);
+      const e = 1 - (1 - s.t) ** 3;
+      meshes[i].quaternion.slerpQuaternions(s.q0, s.q1, e);
+      meshes[i].position.y = s.y0 + (s.y1 - s.y0) * e;
+      meshes[i].scale.setScalar(1);
+      if (s.t < 1) finished = false;
+    });
+    if (!finished) return null;
+    playback.done = true;
+    return playback.values;
+  }
   let held = null, holdTime = 0, holdClosed = false; // zarurile ținute în palmă (punct local)
 
   // power 0..1: cât de tare ai aruncat (degetul / scuturatul); 0.5 = aruncare obișnuită
@@ -169,7 +187,7 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
       const { frames, impacts } = simulate(seed, from, power, launch);
       const last = frames.at(-1);
       const fix = last.map((f, i) => relabel(topValue(new THREE.Quaternion(f[3], f[4], f[5], f[6])), values[i]));
-      playback = { frames, impacts, fix, t: 0, frame: -1, values, done: false };
+      playback = { frames, impacts, fix, t: 0, frame: -1, values, done: false, snap: null, appear: launch?.dice ? 1 : 0 };
       meshes.forEach(m => { m.visible = true; });
     },
     // zarurile în mână: urmăresc punctul `at` (local) lin, rotindu-se ușor (null = nu mai sunt în mână);
@@ -178,6 +196,7 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
       if (this.busy) return;
       playback = null;
       held = at ? at.clone() : null;
+      meshes.forEach(m => m.scale.setScalar(1));
       holdClosed = closed;
       meshes.forEach(m => { m.visible = !!at; });
     },
@@ -196,18 +215,34 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
         return null;
       }
       if (!playback || playback.done) return null;
-      playback.t += dt * PLAYBACK_SPEED;
-      const index = Math.min(playback.frames.length - 1, Math.floor(playback.t * 60));
+      const { frames } = playback, n = frames.length;
+      if (playback.snap) return snap(dt);
+      // cadre înregistrate la 60 fps, redate mai încet: interpolăm între ele, altfel zarul „sacadează”
+      const remaining = n - 1 - playback.t * 60;
+      const k = Math.max(0, Math.min(1, remaining / SETTLE_FRAMES));
+      playback.t += dt * (SPEED_SETTLE + (SPEED_FLIGHT - SPEED_SETTLE) * k * k * (3 - 2 * k));
+      const pos = Math.min(n - 1, playback.t * 60), index = Math.floor(pos), frac = pos - index;
       for (const hit of playback.impacts) if (hit.frame > playback.frame && hit.frame <= index) sound.clack(hit.strength);
       playback.frame = index;
-      const q = new THREE.Quaternion();
-      playback.frames[index].forEach((f, i) => {
-        meshes[i].position.set(f[0], f[1], f[2]);
-        meshes[i].quaternion.copy(q.set(f[3], f[4], f[5], f[6])).multiply(playback.fix[i]);
+      // zarurile aruncate cu degetul apar din aer: o clipă de „creștere”, nu brusc
+      playback.appear = Math.min(1, playback.appear + dt / APPEAR_TIME);
+      const grow = 0.6 + 0.4 * (1 - (1 - playback.appear) ** 3);
+      const a = frames[index], b = frames[Math.min(n - 1, index + 1)];
+      meshes.forEach((m, i) => {
+        const f = a[i], g = b[i];
+        m.position.set(f[0] + (g[0] - f[0]) * frac, f[1] + (g[1] - f[1]) * frac, f[2] + (g[2] - f[2]) * frac);
+        m.quaternion.set(f[3], f[4], f[5], f[6]).slerp(qB.set(g[3], g[4], g[5], g[6]), frac).multiply(playback.fix[i]);
+        m.scale.setScalar(grow);
       });
-      if (index === playback.frames.length - 1) {
-        playback.done = true;
-        return playback.values;
+      if (pos >= n - 1) {
+        // fața de sus, adusă exact orizontal; pe masă, zarul stă exact pe ea
+        playback.snap = meshes.map(m => {
+          const q = m.quaternion.clone();
+          const axis = AXES.map(ax => ax.clone().applyQuaternion(q)).reduce((best, ax) => ax.y > best.y ? ax : best);
+          const y = m.position.y < floor + size * 0.75 ? floor + size / 2 : m.position.y;
+          return { q0: q, q1: new THREE.Quaternion().setFromUnitVectors(axis, UP).multiply(q), y0: m.position.y, y1: y, t: 0 };
+        });
+        return snap(0);
       }
       return null;
     },
