@@ -104,7 +104,14 @@ function createWorld(content) {
   blob.renderOrder = -1;
   blob.visible = content.groundShadow !== false;
   stand.add(blob, content.group);
-  anchor.add(reticle, stand);
+  // mărirea jocului (content.zoom, și cu două degete): separată de scara lumii (setScale = metri), ca mâna
+  // reală să rămână la mărimea ei — doar tabla / turnul cresc
+  const zoom = new THREE.Group();
+  zoom.add(reticle, stand);
+  anchor.add(zoom);
+  const setZoom = z => zoom.scale.setScalar(Math.min(3, Math.max(0.5, z)));
+  // câți „metri de lume” are un metru real (pentru mână): scara lumii, fără mărirea jocului
+  const units = () => anchor.getWorldScale(new THREE.Vector3()).x;
 
   const setScale = s => {
     anchor.scale.setScalar(s);
@@ -119,7 +126,7 @@ function createWorld(content) {
   const follow = (point, quaternion = null, dt = 1 / 60) => {
     if (!point) { reticle.visible = false; seen = false; return; }
     const k = 1 - Math.exp(-dt * 14);
-    if (!seen || anchor.position.distanceTo(point) > r * 1.5 * anchor.scale.x) { anchor.position.copy(point); if (quaternion) anchor.quaternion.copy(quaternion); }
+    if (!seen || anchor.position.distanceTo(point) > r * 1.5 * anchor.scale.x * zoom.scale.x) { anchor.position.copy(point); if (quaternion) anchor.quaternion.copy(quaternion); }
     else { anchor.position.lerp(point, k); if (quaternion) anchor.quaternion.slerp(quaternion, k); }
     seen = true;
     reticle.visible = true;
@@ -149,7 +156,7 @@ function createWorld(content) {
     blob.material.opacity = t;
     if (t === 1) { drop = null; stand.scale.setScalar(1); stand.position.y = 0; }
   };
-  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, tick, setSure };
+  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, tick, setSure, zoom, setZoom, units };
 }
 
 // Rotește conținutul ca direcția `facing` să fie spre cameră (ex.: culoarea ta în fața ta)
@@ -230,7 +237,7 @@ const handEvery = content => (content.handsFast ? 1 : content.handsActive === fa
 // Rulează detecția pe `source` (canvas) cât timp scena e deschisă; dă conținutului mâinile. null dacă nu le vrea.
 // view (opțional): { width, height, map(p) } — când `source` nu e încadrat ca ecranul, reperele se mută în
 // coordonatele ecranului (map), iar mâna se calculează pe dimensiunile ecranului.
-function handTracking(source, camera, focal, content, view = null) {
+function handTracking(source, camera, focal, content, world, view = null) {
   if (!content.hands) return null;
   let tracker = null, stamp = 0, failed = false;
   loadHandTracker('GPU', 1).catch(() => loadHandTracker('CPU', 1)).then(t => { tracker = t; }, error => { console.warn(error); failed = true; });
@@ -244,7 +251,7 @@ function handTracking(source, camera, focal, content, view = null) {
       stamp = Math.max(stamp + 1, performance.now());
       let result;
       try { result = tracker.detectForVideo(source, stamp); } catch (error) { console.warn(error); return []; }
-      content.group.getWorldScale(scale);
+      scale.setScalar(world.units());
       const f = typeof focal === 'function' ? focal() : focal;
       const hands = (result.landmarks || []).map(l => (view
         ? makeHand(l.map(view.map), { width: view.width, height: view.height, focal: f, camera, metersToWorld: scale.x })
@@ -285,6 +292,8 @@ export function handOcclusion(root, width, height) {
   layer.height = height;
   layer.className = 'stage-layer';
   layer.style.pointerEvents = 'none';
+  // mâna pe jumătate transparentă: se vede că e în față, dar nu ascunde tabla / piesa pe care o muți
+  layer.style.opacity = '0.5';
   root.append(layer);
   const ctx = layer.getContext('2d');
   const mask = document.createElement('canvas');
@@ -357,6 +366,8 @@ const ndcFromEvent = (event, element) => {
  */
 export async function openStage({ root, overlay, mode, content, status, setState = () => {}, onTap = () => {}, placing = () => {}, videoUrl }) {
   const world = createWorld(content);
+  // pe ecran camera se potrivește după joc; în AR jocul poate fi mai mare decât în realitate, ca să-l vezi bine
+  if (mode !== 'screen') world.setZoom(content.zoom ?? 1);
   const common = { root, overlay, content, world, status, setState, onTap, placing, videoUrl };
   const stage = mode === 'webxr' ? await startWebXR(common)
     : mode === 'slam' ? await startTable(common)
@@ -426,10 +437,10 @@ function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isRe
 //  - după: cu două degete muți jocul pe masă, îl rotești și îl mărești / micșorezi.
 // hit(x, y) ∈ [0, 1] → { point, sure } sau null; place(point); progress(0..1 | null) pentru buton.
 const AUTO_PLACE_S = 1.8;
-function placementControl({ root, camera, world, hit, place, progress, status, getState, center = [0.5, 0.5] }) {
-  const { anchor, setScale } = world;
+function placementControl({ root, camera, world, content, hit, place, progress, status, getState, center = [0.5, 0.5] }) {
+  const { anchor } = world;
   // pinned: punctul de pe ecran cât tragi cercul; dropped: locul de pe masă unde l-ai lăsat (nu mai fuge cu telefonul)
-  let pinned = null, dropped = null, hold = 0, sure = false, last = 0, gesture = null, baseScale = 1, hinted = false;
+  let pinned = null, dropped = null, hold = 0, sure = false, last = 0, gesture = null, hinted = false;
   const history = [], pointers = new Map(), raycaster = new THREE.Raycaster();
   const rel = e => { const r = root.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
   const onTable = e => {
@@ -456,12 +467,13 @@ function placementControl({ root, camera, world, hit, place, progress, status, g
     if (!now) return;
     anchor.position.add(now.mid.clone().sub(gesture.mid));
     anchor.rotateY(-(now.angle - gesture.angle));
-    setScale(Math.min(baseScale * 2.5, Math.max(baseScale * 0.4, anchor.scale.x * now.dist / gesture.dist)));
+    world.setZoom(world.zoom.scale.x * now.dist / gesture.dist);
     anchor.updateMatrixWorld(true);
     gesture = snapshot();
   };
   const onUp = e => {
     if (!pointers.delete(e.pointerId)) return;
+    if (gesture && pointers.size < 2) content.onZoom?.(world.zoom.scale.x); // mărimea aleasă rămâne pentru data viitoare
     if (pointers.size < 2) gesture = null;
     if (pinned && getState() === 'found' && world.reticle.visible) dropped = anchor.position.clone();
     pinned = null;
@@ -487,7 +499,7 @@ function placementControl({ root, camera, world, hit, place, progress, status, g
       history.push({ t: now, p: anchor.position.clone() });
       while (history.length && now - history[0].t > 700) history.shift();
       // se pune singur doar pe o suprafață recunoscută sigur
-      const still = !!h?.sure && pointers.size === 0 && history.length > 8 && history.every(x => x.p.distanceTo(anchor.position) < 0.012 * anchor.scale.x);
+      const still = !!h?.sure && pointers.size === 0 && history.length > 8 && history.every(x => x.p.distanceTo(anchor.position) < 0.012 * anchor.scale.x * world.zoom.scale.x);
       hold = still ? hold + dt / AUTO_PLACE_S : Math.max(0, hold - dt * 1.5);
       progress(hold);
       if (hold >= 1) this.placeHere();
@@ -497,9 +509,8 @@ function placementControl({ root, camera, world, hit, place, progress, status, g
       hold = 0;
       place(anchor.position.clone());
     },
-    // după fixare: ține minte mărimea de bază (gesturile o pot schimba doar între 0,4× și 2,5×) și arată o dată ce poți face
+    // după fixare: arată o dată ce poți face
     placed() {
-      baseScale = anchor.scale.x;
       pinned = dropped = null;
       hold = 0;
       progress(null);
@@ -737,7 +748,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
   handCanvas.width = 360;
   handCanvas.height = Math.round(360 * H / W);
   const handCtx = handCanvas.getContext('2d', { willReadFrequently: true });
-  const handsTracking = content.hands ? handTracking(handCanvas, camera, () => focal * handCanvas.width / W, content) : null;
+  const handsTracking = content.hands ? handTracking(handCanvas, camera, () => focal * handCanvas.width / W, content, world) : null;
   const occlusion = handsTracking && handOcclusion(root, W, H);
   let lastHands = [];
 
@@ -764,7 +775,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
     status('');
     control.placed();
   };
-  const control = placementControl({ root, camera, world, hit: hitAt, place, progress: placing, status, getState: () => state, center: [0.5, 0.55] });
+  const control = placementControl({ root, camera, world, content, hit: hitAt, place, progress: placing, status, getState: () => state, center: [0.5, 0.55] });
 
   const offTap = tapHandler(root, camera, content, world, onTap, event => {
     if (state === 'scanning') { status('Încă pornesc urmărirea — mișcă puțin telefonul, cu masa în cadru.'); return false; }
@@ -940,7 +951,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
     go('found');
   }
 
-  const handsTracking = handTracking(canvas, camera, L.focal, content);
+  const handsTracking = handTracking(canvas, camera, L.focal, content, world);
   const occlusion = handsTracking && handOcclusion(root, L.w, L.h);
   const slamCanvas = document.createElement('canvas');
   slamCanvas.width = L.w;
@@ -970,7 +981,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
   }
   // cât alegi locul, cercul stă pe planul găsit, sub centrul ecranului (sau unde l-ai tras)
   const control = placementControl({
-    root, camera, world, place, progress: placing, status, getState: () => state,
+    root, camera, world, content, place, progress: placing, status, getState: () => state,
     hit: (x, y) => {
       const point = pointOnSurface(new THREE.Vector2(x * 2 - 1, 1 - y * 2));
       return point && point.distanceTo(camera.position) < 8 * ASSUMED_DISTANCE ? { point, sure: true } : null;
@@ -1131,7 +1142,7 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
   }
 
   const offTap = tapHandler(root, camera, content, world, onTap, () => state === 'placed');
-  const handsTracking = handTracking(canvas, camera, L.focal, content);
+  const handsTracking = handTracking(canvas, camera, L.focal, content, world);
   const occlusion = handsTracking && handOcclusion(root, L.w, L.h);
   let frameCount = 0, lastHands = [];
 

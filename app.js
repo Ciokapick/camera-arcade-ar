@@ -271,6 +271,7 @@ function settled() {
 
 // ---------------------------------------------------------------- scena 3D (barbut + Nu te supăra)
 
+const GAME_ZOOM = { jenga: 1.5, xo: 1.6, ludo: 1.3, barbut: 1 };
 function startStageView(v) {
   if (v.game === 'barbut') {
     const group = new THREE.Group();
@@ -324,6 +325,13 @@ function startStageView(v) {
     };
     syncBoard();
   }
+  // în AR tablele sunt mai mari decât cele reale (lângă mâna din fața camerei păreau de jucărie);
+  // cu două degete le mărești / micșorezi, iar mărimea aleasă rămâne pentru data viitoare
+  const key = `zoom-${v.game}`;
+  let saved = null;
+  try { saved = Number(localStorage.getItem(key)) || null; } catch {}
+  v.content.zoom = saved ?? GAME_ZOOM[v.game] ?? 1;
+  v.content.onZoom = z => { try { localStorage.setItem(key, z.toFixed(2)); } catch {} };
   openMode(SCREEN ? 'screen' : 'table');
 }
 
