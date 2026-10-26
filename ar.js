@@ -799,8 +799,13 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
     const point = ray.ray.intersectPlane(tablePlane, new THREE.Vector3());
     return point && point.distanceTo(camera.position) < 2.5 ? { point, sure: false } : null;
   };
+  // Unitățile lui 8th Wall vin din înălțimea presupusă la pornire (45 cm); dacă telefonul era de fapt mai sus,
+  // mai jos sau înclinat altfel, jocul ieșea de 2–4× prea mic. Ca la AlvaAR: îl dimensionăm după distanța
+  // telefon → locul ales, ca și cum masa ar fi la 45 cm (scara intră și la mână, deci mâna rămâne potrivită).
+  const fitScale = () => setScale(Math.min(6, Math.max(0.3, camera.position.distanceTo(anchor.position) / ASSUMED_DISTANCE)));
   const place = point => {
     world.place(point);
+    fitScale();
     anchor.quaternion.identity(); // masa = planul y = 0 al lui 8th Wall
     reticle.visible = false;
     content.group.visible = true;
@@ -848,6 +853,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
         if (state === 'found') {
           anchor.quaternion.identity();
           control.frame();
+          if (reticle.visible) fitScale();
         }
         // mesajul doar când se schimbă (altfel ar șterge pe loc indicațiile de după plasare)
         const limited = state === 'placed' && r.trackingStatus === 'LIMITED';
