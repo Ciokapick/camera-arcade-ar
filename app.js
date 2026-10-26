@@ -1046,10 +1046,10 @@ function grabBlock(raycaster, _event, forced = null) {
   renderJenga(state, self);
   return true;
 }
-function dragBlock(raycaster) {
+function dragBlock(raycaster, _event, depth = null) {
   if (!pulling) return;
   if (pulling.carrying) return view.jenga.carry(raycaster);
-  const offset = view.jenga.drag(raycaster), now = performance.now(), dt = (now - pulling.t) / 1000;
+  const offset = view.jenga.drag(raycaster, depth), now = performance.now(), dt = (now - pulling.t) / 1000;
   if (dt < 0.04) return;
   const speed = Math.abs(offset - pulling.offset) / dt;
   Object.assign(pulling, { offset, t: now, maxSpeed: Math.max(pulling.maxSpeed, speed) });
@@ -1083,13 +1083,14 @@ function dropBlock() {
 // ciupești → o apuci; muți mâna → o tragi / o duci; desfaci degetele → îi dai drumul.
 // Ciupitul are două praguri (se prinde sub PINCH_ON, scapă abia peste PINCH_OFF) și „pâlpâie” uneori,
 // așa că îi dăm drumul abia după 3 cadre deschise. Piesa țintită rămâne aleasă o clipă, cât închizi degetele.
-const PINCH_ON = 0.6, PINCH_OFF = 0.95, AIM_KEEP_MS = 400;
+const PINCH_ON = 0.6, PINCH_OFF = 0.8, AIM_KEEP_MS = 400;
 function jengaHands(hands) {
   const v = view, hand = hands[0], now = performance.now();
   const j = room?.state.jenga, mine = j?.phase === 'pull' && jengaTurn(j) === room.selfId && !v.content.busy;
   if (!hand) {
     v.jenga.hover(null);
     v.aim = null;
+    v.handAt = null;
     if (v.grab && ++v.grabLost > 6) { v.grab = false; dropBlock(); }
     return;
   }
@@ -1106,10 +1107,16 @@ function jengaHands(hands) {
   }
   if (pinched) {
     v.grabLost = 0;
+    // unde e mâna în 3D (din mărimea palmei), netezit — cu ea tragi piesele orientate spre tine
+    const g = v.content.group, at = g.worldToLocal(hand.world(hand.mid(4, 8)));
+    v.handAt = v.handAt ? v.handAt.lerp(at, 0.35) : at;
     if (!v.grab && v.aim) {
       v.grab = grabBlock(ray, null, v.aim.block);
-      if (v.grab) { v.jenga.hover(null); v.aim = null; vibrate(15); }
-    } else if (v.grab) dragBlock(ray);
+      if (v.grab) { v.jenga.hover(null); v.aim = null; v.grabAt = v.handAt.clone(); vibrate(15); }
+    } else if (v.grab) {
+      const axis = v.jenga.heldAxis;
+      dragBlock(ray, null, axis && { offset: v.handAt.clone().sub(v.grabAt).dot(axis), weight: 1.4 });
+    }
   } else if (v.grab && ++v.grabLost >= 3) {
     v.grab = false;
     dropBlock();

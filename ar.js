@@ -805,15 +805,15 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
   let lastHands = [];
 
   // Masa, ca la aplicația Măsurare: la fiecare cadru întrebăm 8th Wall ce puncte 3D vede sub câteva locuri de pe
-  // ecran (o grilă parcursă pe rând), ținem ultimele ~2,5 s și luăm înălțimea la care se adună cele mai multe
+  // ecran (o grilă parcursă pe rând), ținem ultimele 60 de cadre (~2 s) și luăm înălțimea la care se adună cele mai multe
   // (surface.js). Înălțimea „0” a lui 8th Wall vine doar din cum țineai telefonul la pornire, deci nu ne bazăm
   // pe ea. Cu mâna în cadru nu adunăm puncte (ar trage masa în sus), iar după plasare masa rămâne fixă.
   const GRID = [];
   for (let i = 0; i < 7; i++) for (let j = 0; j < 6; j++) GRID.push([0.1 + i * 0.133, 0.3 + j * 0.12]);
   const samples = [];
-  let gridAt = 0, table = null; // { y, sure }
+  let gridAt = 0, sampleFrame = 0, table = null; // { y, sure }
   const sampleTable = () => {
-    const now = performance.now();
+    const now = ++sampleFrame;
     for (let k = 0; k < 7; k++) {
       const [x, y] = GRID[gridAt++ % GRID.length];
       for (const h of XR8.XrController.hitTest(x, y, ['FEATURE_POINT', 'ESTIMATED_SURFACE', 'DETECTED_SURFACE'])) {
@@ -821,12 +821,13 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
         if (Number.isFinite(h.position.y) && camera.position.y - h.position.y > 0.05) samples.push({ y: h.position.y, t: now, w: h.type === 'DETECTED_SURFACE' ? 3 : h.type === 'ESTIMATED_SURFACE' ? 2 : 1 });
       }
     }
-    while (samples.length && (now - samples[0].t > 2500 || samples.length > 500)) samples.shift();
+    while (samples.length && (now - samples[0].t > 60 || samples.length > 600)) samples.shift();
     const est = tableHeight(samples.flatMap(p => Array(p.w).fill(p.y)));
     if (!est) return;
     const sure = est.count >= 25 && est.support > 0.3;
     // un salt mare = altă suprafață (te-ai mutat cu telefonul): direct; altfel lin
     table = !table || Math.abs(est.y - table.y) > 0.05 ? { y: est.y, sure } : { y: table.y + (est.y - table.y) * 0.15, sure };
+    stats.table = { ...table, count: est.count, support: est.support, samples: samples.length };
   };
   // punctul de pe masă de sub (x, y) ∈ [0, 1]: raza intersectată cu planul mesei
   const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), ray = new THREE.Raycaster();

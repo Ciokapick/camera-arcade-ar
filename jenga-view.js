@@ -119,10 +119,17 @@ export function createJenga() {
       held.s0 = along(ray) ?? 0;
     },
     // mută piesa după deget, doar pe axa ei; întoarce cât a ieșit (m, cu semn)
-    drag(raycaster) {
+    // depth (opțional, de la mâna reală): { offset, weight } — cât s-a mutat mâna în 3D pe axa piesei; contează
+    // cu atât mai mult cu cât piesa e orientată spre cameră (atunci pe ecran tragerea aproape că nu se vede)
+    drag(raycaster, depth = null) {
       if (!held) return 0;
-      const s = along(localRay(raycaster));
-      if (s !== null) held.offset = Math.max(-L * 0.7, Math.min(L * 0.7, s - held.s0));
+      const ray = localRay(raycaster), s = along(ray);
+      let offset = s !== null ? s - held.s0 : held.offset;
+      if (depth) {
+        const w = Math.min(1, Math.abs(held.axis.dot(ray.direction)) * depth.weight);
+        offset = offset * (1 - w) + depth.offset * w;
+      }
+      held.offset = Math.max(-L * 0.7, Math.min(L * 0.7, offset));
       blocks[held.i].position.copy(held.center).addScaledVector(held.axis, held.offset);
       return held.offset;
     },
@@ -158,10 +165,15 @@ export function createJenga() {
       if (index !== null) blocks[index].material.emissive.setHex(0x3a5a00);
     },
     get selected() { return selected; },
+    // axa piesei ținute, în coordonatele grupului (null dacă nu ții una)
+    get heldAxis() { return held ? held.axis.clone() : null; },
     // piesa spre care țintește mâna (cu mâna reală nu nimerești niciodată fix): cea mai apropiată de rază ca
     // unghi (deci la fel de ușor de aproape sau de departe), dintre cele bune (ok), cu un mic avantaj pentru
     // cele din față; null dacă toate sunt mai departe de `tolerance` (radiani, ~6°)
     nearest(raycaster, ok, tolerance = 0.1) {
+      // raza nimerește chiar o piesă (prima din față): aceea e
+      const direct = raycaster.intersectObjects(blocks, false)[0];
+      if (direct && ok(direct.object.userData.index)) return direct.object.userData.index;
       const ray = localRay(raycaster);
       let best = null, bestScore = Infinity;
       blocks.forEach((mesh, i) => {
@@ -170,7 +182,7 @@ export function createJenga() {
         if (along <= 0) return;
         const angle = ray.distanceToPoint(mesh.position) / along;
         if (angle > tolerance) return;
-        const score = angle + 0.02 * along / W;
+        const score = angle + 0.004 * along / W;
         if (score < bestScore) { bestScore = score; best = i; }
       });
       return best;

@@ -1,2 +1,4 @@
 tests/.cache/
 .vercel/
+tools/ar-sim/.libs/
+tools/ar-sim/.out/
