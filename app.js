@@ -223,6 +223,7 @@ function leaveGameView() {
   $('#rps-view').classList.remove('show');
   closeBetSheet();
   $('#stage-root').replaceChildren();
+  $('#zoom-controls').hidden = true;
 }
 
 $('#back').addEventListener('click', () => {
@@ -282,7 +283,7 @@ function startStageView(v) {
     v.xo = cube;
     v.xoArmed = true;
     v.content = {
-      group: cube.group, footprint: cube.footprint, busy: false, pick: raycaster => pickCell(raycaster), hands: xoHands, update: dt => cube.update(dt),
+      group: cube.group, footprint: cube.footprint, busy: false, handOpacity: 0.7, pick: raycaster => pickCell(raycaster), hands: xoHands, update: dt => cube.update(dt),
       get handsActive() { const s = room?.state.xo; return !!s && !s.winner && s.players[s.turn] === room.selfId; },
     };
   } else if (v.game === 'jenga') {
@@ -358,6 +359,8 @@ async function openMode(mode) {
       setState: s => {
         // WebXR n-are așezare automată: doar butonul
         if (real === 'webxr' && view === v) { $('#place-here').hidden = s !== 'found'; document.body.classList.toggle('placing', s === 'found'); }
+        // + / − pentru mărimea jocului, cât timp e pus pe masă
+        if (view === v) $('#zoom-controls').hidden = !(s === 'placed' && real !== 'screen');
         if (s === 'closed' && view === v && v.stage === stage) { v.stage = null; v.mode = null; $('#ar-status').textContent = 'AR-ul s-a închis — apasă butonul cu cubul, sus.'; }
       },
       onTap: tapAction,
@@ -400,6 +403,8 @@ $('#sheet').addEventListener('click', event => {
   openMode(mode);
 });
 $('#place-here').addEventListener('click', () => view?.stage?.placeHere?.());
+$('#zoom-in').addEventListener('click', () => view?.stage?.zoomBy?.(1.25));
+$('#zoom-out').addEventListener('click', () => view?.stage?.zoomBy?.(0.8));
 $('#replace-table').addEventListener('click', () => { $('#sheet').hidden = true; view?.stage?.replace(); });
 // în WebXR, atingerile pe butoane nu trebuie să ajungă și la scenă
 $('#ui').addEventListener('beforexrselect', event => { if (event.target.closest('.panel, button')) event.preventDefault(); });
@@ -1028,10 +1033,11 @@ function pullSelected() {
 // iar la final „norocul” se micșorează proporțional (luck < risc = turnul cade), deci smucitul crește riscul.
 const SAFE_SPEED = 0.12; // m/s — piesa (7,5 cm) scoasă în ~0,5 s
 let pulling = null; // { block, t, offset, speed, maxSpeed }
-function grabBlock(raycaster) {
+// forced: piesa aleasă dinainte (cea țintită cu mâna), altfel cea atinsă
+function grabBlock(raycaster, _event, forced = null) {
   const state = room?.state, self = me(), j = state?.jenga;
   if (!j || j.phase !== 'pull' || jengaTurn(j) !== self?.id || view.content.busy) return false;
-  const block = view.jenga.pick(raycaster);
+  const block = forced ?? view.jenga.pick(raycaster);
   if (block === null || !jenga.pullable(j.slots, block)) return false; // atingerea normală spune de ce nu
   view.jenga.select(block);
   view.jenga.grab(block, raycaster);
@@ -1073,16 +1079,37 @@ function dropBlock() {
   renderJenga(room.state, me());
 }
 
-// Cu mâna reală: ciupești piesa (degetul mare lipit de arătător) → o apuci; muți mâna → o tragi / o duci;
-// desfaci degetele → îi dai drumul. Ciupitul „pâlpâie” uneori, așa că îi dăm drumul abia după 3 cadre deschise.
+// Cu mâna reală: duci degetul mare și arătătorul în jurul unei piese → se colorează albastru (asta prinzi);
+// ciupești → o apuci; muți mâna → o tragi / o duci; desfaci degetele → îi dai drumul.
+// Ciupitul are două praguri (se prinde sub PINCH_ON, scapă abia peste PINCH_OFF) și „pâlpâie” uneori,
+// așa că îi dăm drumul abia după 3 cadre deschise. Piesa țintită rămâne aleasă o clipă, cât închizi degetele.
+const PINCH_ON = 0.6, PINCH_OFF = 0.95, AIM_KEEP_MS = 400;
 function jengaHands(hands) {
-  const v = view, hand = hands[0];
-  if (!hand) { if (v.grab && ++v.grabLost > 6) { v.grab = false; dropBlock(); } return; }
+  const v = view, hand = hands[0], now = performance.now();
+  const j = room?.state.jenga, mine = j?.phase === 'pull' && jengaTurn(j) === room.selfId && !v.content.busy;
+  if (!hand) {
+    v.jenga.hover(null);
+    v.aim = null;
+    if (v.grab && ++v.grabLost > 6) { v.grab = false; dropBlock(); }
+    return;
+  }
   const ray = hand.ray(hand.mid(4, 8));
-  if (hand.pinch) {
+  const pinched = hand.pinchRatio < (v.grab ? PINCH_OFF : PINCH_ON);
+  if (!v.grab) {
+    const aim = mine ? v.jenga.nearest(ray, i => jenga.pullable(j.slots, i)) : null;
+    if (aim !== null && !(pinched && v.aim)) {
+      if (v.aim?.block !== aim) $('#info-small').textContent = 'Piesa albastră: ciupește-o (degetul mare + arătătorul) ca s-o prinzi.';
+      v.aim = { block: aim, t: now };
+    }
+    else if (v.aim && (!mine || now - v.aim.t > AIM_KEEP_MS)) v.aim = null;
+    v.jenga.hover(v.aim?.block ?? null);
+  }
+  if (pinched) {
     v.grabLost = 0;
-    if (!v.grab) v.grab = grabBlock(ray);
-    else dragBlock(ray);
+    if (!v.grab && v.aim) {
+      v.grab = grabBlock(ray, null, v.aim.block);
+      if (v.grab) { v.jenga.hover(null); v.aim = null; vibrate(15); }
+    } else if (v.grab) dragBlock(ray);
   } else if (v.grab && ++v.grabLost >= 3) {
     v.grab = false;
     dropBlock();

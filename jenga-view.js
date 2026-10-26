@@ -52,7 +52,7 @@ export function createJenga() {
     return mesh;
   });
 
-  let slots = null, selected = null, anim = null, lastSeq = null, time = 0, fallen = false;
+  let slots = null, selected = null, hovered = null, anim = null, lastSeq = null, time = 0, fallen = false;
   // piesa trasă cu degetul: { i, axis, center, plane, s0, offset }; wobble = cât se clatină turnul (0..1)
   let held = null, wobble = 0;
   // unde va ajunge piesa sus: o piesă „fantomă”, transparentă
@@ -158,6 +158,27 @@ export function createJenga() {
       if (index !== null) blocks[index].material.emissive.setHex(0x3a5a00);
     },
     get selected() { return selected; },
+    // piesa spre care țintește mâna (cu mâna reală nu nimerești niciodată fix): cea mai apropiată de rază,
+    // dintre cele bune (ok), cu un mic avantaj pentru cele din față; null dacă e mai departe de `tolerance`
+    nearest(raycaster, ok, tolerance = W * 1.3) {
+      const ray = localRay(raycaster);
+      let best = null, bestScore = Infinity;
+      blocks.forEach((mesh, i) => {
+        if (!ok(i)) return;
+        const d = ray.distanceToPoint(mesh.position);
+        if (d > tolerance) return;
+        const score = d + 0.3 * mesh.position.clone().sub(ray.origin).dot(ray.direction);
+        if (score < bestScore) { bestScore = score; best = i; }
+      });
+      return best;
+    },
+    // evidențiere albastră = „asta prinzi dacă ciupești acum”
+    hover(index) {
+      if (hovered === index) return;
+      if (hovered !== null && hovered !== selected) blocks[hovered].material.emissive.setHex(0x000000);
+      hovered = index;
+      if (index !== null && index !== selected) blocks[index].material.emissive.setHex(0x1d4ed8);
+    },
     pick(raycaster) {
       const hit = raycaster.intersectObjects(blocks, false)[0];
       return hit ? hit.object.userData.index : null;

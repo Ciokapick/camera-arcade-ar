@@ -109,7 +109,11 @@ function createWorld(content) {
   const zoom = new THREE.Group();
   zoom.add(reticle, stand);
   anchor.add(zoom);
-  const setZoom = z => zoom.scale.setScalar(Math.min(3, Math.max(0.5, z)));
+  let zoomTarget = null;
+  const clampZoom = z => Math.min(3, Math.max(0.5, z));
+  const setZoom = z => { zoomTarget = null; zoom.scale.setScalar(clampZoom(z)); };
+  // din butoane: lin, nu dintr-odată
+  const zoomBy = f => { zoomTarget = clampZoom((zoomTarget ?? zoom.scale.x) * f); return zoomTarget; };
   // câți „metri de lume” are un metru real (pentru mână): scara lumii, fără mărirea jocului
   const units = () => anchor.getWorldScale(new THREE.Vector3()).x;
 
@@ -139,6 +143,11 @@ function createWorld(content) {
   };
   const tick = dt => {
     time += dt;
+    if (zoomTarget !== null) {
+      const z = zoom.scale.x + (zoomTarget - zoom.scale.x) * (1 - Math.exp(-dt * 10));
+      zoom.scale.setScalar(Math.abs(z - zoomTarget) < 0.002 ? zoomTarget : z);
+      if (zoom.scale.x === zoomTarget) zoomTarget = null;
+    }
     if (reticle.visible) {
       const p = (time * 0.8) % 1;
       pulse.scale.setScalar(0.15 + p * 0.85);
@@ -156,7 +165,7 @@ function createWorld(content) {
     blob.material.opacity = t;
     if (t === 1) { drop = null; stand.scale.setScalar(1); stand.position.y = 0; }
   };
-  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, tick, setSure, zoom, setZoom, units };
+  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, tick, setSure, zoom, setZoom, zoomBy, units };
 }
 
 // Rotește conținutul ca direcția `facing` să fie spre cameră (ex.: culoarea ta în fața ta)
@@ -212,8 +221,9 @@ export function makeHand(landmarks, { width, height, focal, camera, metersToWorl
     gesture: classify(landmarks),
     open: openness(landmarks, width / height),
     depth,
-    // degetul mare lipit de arătător (relativ la mărimea palmei)
+    // degetul mare lipit de arătător (relativ la mărimea palmei); pinchRatio = cât de depărtate sunt, în „lățimi de palmă”
     pinch: dist2(landmarks[4], landmarks[8], width, height) < dist2(landmarks[5], landmarks[17], width, height) * 0.55,
+    pinchRatio: dist2(landmarks[4], landmarks[8], width, height) / Math.max(1e-6, dist2(landmarks[5], landmarks[17], width, height)),
     mid: (a, b) => ({ x: (landmarks[a].x + landmarks[b].x) / 2, y: (landmarks[a].y + landmarks[b].y) / 2 }),
     // centrul palmei: media încheieturii și a bazelor celor 4 degete
     palm: () => ({ x: [0, 5, 9, 13, 17].reduce((s, i) => s + landmarks[i].x, 0) / 5, y: [0, 5, 9, 13, 17].reduce((s, i) => s + landmarks[i].y, 0) / 5 }),
@@ -293,8 +303,6 @@ export function handOcclusion(root, width, height) {
   layer.height = height;
   layer.className = 'stage-layer';
   layer.style.pointerEvents = 'none';
-  // mâna pe jumătate transparentă: se vede că e în față, dar nu ascunde tabla / piesa pe care o muți
-  layer.style.opacity = '0.5';
   root.append(layer);
   const ctx = layer.getContext('2d');
   const mask = document.createElement('canvas');
@@ -307,6 +315,8 @@ export function handOcclusion(root, width, height) {
     draw(frame, hands, camera, focal, content, rect = [0, 0, width, height]) {
       ctx.clearRect(0, 0, width, height);
       if (!hands.length) return;
+      // content.handOpacity < 1: mâna se vede prin ea (ex.: la X și 0, ca să vezi căsuța de sub deget)
+      layer.style.opacity = String(content.handOpacity ?? 1);
       m.clearRect(0, 0, width, height);
       paintHands(m, hands, '#fff'); // grosimea unui deget ≈ 0,32 × lățimea palmei
       // găurile: obiectele ținute în mână rămân în fața degetelor
@@ -376,6 +386,8 @@ export async function openStage({ root, overlay, mode, content, status, setState
         : startScreen(common);
   stage.mode = mode;
   stage.content = content;
+  // butoanele + / −: mărește / micșorează jocul cu 25%, ține minte mărimea
+  stage.zoomBy = mode === 'screen' ? () => {} : f => content.onZoom?.(world.zoomBy(f));
   // pentru testele automate
   window.__stage = stage;
   return stage;
@@ -1214,6 +1226,7 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
     go(visible ? 'placed' : 'scanning');
     status(visible ? '' : 'Caut markerul… ține-l întreg în cadru.');
     if (handsTracking && visible && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame();
+    world.tick(dt);
     content.update(dt);
     renderer.render(scene, camera);
     if (occlusion) {
