@@ -246,7 +246,8 @@ function handTracking(source, camera, focal, content, world, view = null) {
     get ready() { return !!tracker; },
     get failed() { return failed; },
     // apelat după ce s-a desenat cadrul; întoarce mâinile (ca să le poată desena scena)
-    frame() {
+    // deliver = false: doar le găsim (ca să nu le ia urmărirea drept masă), jocul nu le primește încă
+    frame(deliver = true) {
       if (!tracker) return [];
       stamp = Math.max(stamp + 1, performance.now());
       let result;
@@ -256,7 +257,7 @@ function handTracking(source, camera, focal, content, world, view = null) {
       const hands = (result.landmarks || []).map(l => (view
         ? makeHand(l.map(view.map), { width: view.width, height: view.height, focal: f, camera, metersToWorld: scale.x })
         : makeHand(l, { width: source.width, height: source.height, focal: f, camera, metersToWorld: scale.x })));
-      content.hands(hands);
+      if (deliver) content.hands(hands);
       return hands;
     },
   };
@@ -472,7 +473,7 @@ function handPoseGuard() {
 //  - după: cu două degete muți jocul pe masă, îl rotești și îl mărești / micșorezi.
 // hit(x, y) ∈ [0, 1] → { point, sure } sau null; place(point); progress(0..1 | null) pentru buton.
 const AUTO_PLACE_S = 1.8;
-function placementControl({ root, camera, world, content, hit, place, progress, status, getState, center = [0.5, 0.5] }) {
+function placementControl({ root, camera, world, content, hit, place, progress, status, getState, center = [0.5, 0.5], handInView = () => false }) {
   const { anchor } = world;
   // pinned: punctul de pe ecran cât tragi cercul; dropped: locul de pe masă unde l-ai lăsat (nu mai fuge cu telefonul)
   let pinned = null, dropped = null, hold = 0, sure = false, last = 0, gesture = null, hinted = false;
@@ -523,7 +524,9 @@ function placementControl({ root, camera, world, content, hit, place, progress, 
       const now = performance.now(), dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
       last = now;
       if (getState() !== 'found') { progress(null); history.length = 0; return; }
-      const h = dropped ? { point: dropped, sure } : hit(...(pinned ?? center));
+      // cu mâna în cadru cercul stă pe loc (altfel ar putea sări pe mână) și nu se pune singur
+      const hand = handInView() && !pinned;
+      const h = dropped ? { point: dropped, sure } : hand && world.reticle.visible ? { point: anchor.position.clone(), sure } : hit(...(pinned ?? center));
       world.follow(h?.point ?? null, null, dt);
       world.setSure(!!h?.sure);
       if (h?.sure && !sure) {
@@ -534,7 +537,7 @@ function placementControl({ root, camera, world, content, hit, place, progress, 
       history.push({ t: now, p: anchor.position.clone() });
       while (history.length && now - history[0].t > 700) history.shift();
       // se pune singur doar pe o suprafață recunoscută sigur
-      const still = !!h?.sure && pointers.size === 0 && history.length > 8 && history.every(x => x.p.distanceTo(anchor.position) < 0.012 * anchor.scale.x * world.zoom.scale.x);
+      const still = !!h?.sure && !hand && pointers.size === 0 && history.length > 8 && history.every(x => x.p.distanceTo(anchor.position) < 0.012 * anchor.scale.x * world.zoom.scale.x);
       hold = still ? hold + dt / AUTO_PLACE_S : Math.max(0, hold - dt * 1.5);
       progress(hold);
       if (hold >= 1) this.placeHere();
@@ -791,9 +794,10 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
   // punctul de pe masă de sub (x, y) ∈ [0, 1]: suprafața găsită de 8th Wall, altfel planul y = 0 (masa)
   const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), ray = new THREE.Raycaster();
   const hitAt = (x, y) => {
-    const hits = XR8.XrController.hitTest(x, y, ['ESTIMATED_SURFACE', 'DETECTED_SURFACE']);
+    // doar suprafețe la nivelul mesei (y ≈ 0): mâna din cadru are și ea „suprafețe”, dar e mai sus
+    const hits = XR8.XrController.hitTest(x, y, ['ESTIMATED_SURFACE', 'DETECTED_SURFACE']).filter(h => Math.abs(h.position.y) < 0.06);
     const hit = hits.find(h => h.type === 'DETECTED_SURFACE') ?? hits.find(h => h.type === 'ESTIMATED_SURFACE');
-    if (hit && Number.isFinite(hit.position.x)) return { point: new THREE.Vector3(hit.position.x, hit.position.y, hit.position.z), sure: true };
+    if (hit && Number.isFinite(hit.position.x)) return { point: new THREE.Vector3(hit.position.x, 0, hit.position.z), sure: true };
     ray.setFromCamera(new THREE.Vector2(x * 2 - 1, 1 - y * 2), camera);
     // nu prea departe (spre orizont, planul y = 0 dă puncte la metri distanță)
     const point = ray.ray.intersectPlane(tablePlane, new THREE.Vector3());
@@ -816,7 +820,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
     status('');
     control.placed();
   };
-  const control = placementControl({ root, camera, world, content, hit: hitAt, place, progress: placing, status, getState: () => state, center: [0.5, 0.55] });
+  const control = placementControl({ root, camera, world, content, hit: hitAt, place, progress: placing, status, getState: () => state, center: [0.5, 0.55], handInView: () => lastHands.length > 0 });
 
   const offTap = tapHandler(root, camera, content, world, onTap, event => {
     if (state === 'scanning') { status('Încă pornesc urmărirea — mișcă puțin telefonul, cu masa în cadru.'); return false; }
@@ -841,7 +845,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
         focal = r.intrinsics[5] * H / 2;
         camera.position.set(r.position.x, r.position.y, r.position.z);
         camera.quaternion.set(r.rotation.x, r.rotation.y, r.rotation.z, r.rotation.w);
-        guard.apply(camera.position, state === 'placed' && lastHands.length > 0);
+        guard.apply(camera.position, lastHands.length > 0);
         camera.updateMatrixWorld(true);
         stats.poses += 1;
         if (state === 'scanning' && r.trackingStatus === 'NORMAL') {
@@ -866,9 +870,10 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
       last = now;
       frameCount += 1;
       stats.frames += 1;
-      if (handsTracking && state === 'placed' && frameCount % handEvery(content) === 0) {
+      // mâinile le căutăm și cât alegi locul (atunci doar ca să nu le luăm drept masă)
+      if (handsTracking && state !== 'scanning' && frameCount % handEvery(content) === 0) {
         handCtx.drawImage(feed, 0, 0, handCanvas.width, handCanvas.height); // imaginea camerei de pe ecran, abia desenată
-        lastHands = handsTracking.frame();
+        lastHands = handsTracking.frame(state === 'placed');
       }
       world.tick(dt);
       content.update(dt);
@@ -1025,7 +1030,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
   }
   // cât alegi locul, cercul stă pe planul găsit, sub centrul ecranului (sau unde l-ai tras)
   const control = placementControl({
-    root, camera, world, content, place, progress: placing, status, getState: () => state,
+    root, camera, world, content, place, progress: placing, status, getState: () => state, handInView: () => lastHands.length > 0,
     hit: (x, y) => {
       const point = pointOnSurface(new THREE.Vector2(x * 2 - 1, 1 - y * 2));
       return point && point.distanceTo(camera.position) < 8 * ASSUMED_DISTANCE ? { point, sure: true } : null;
@@ -1056,7 +1061,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       // netezim puțin tremuratul (o urmărire perfectă la fiecare cadru nu există); un salt mare = imediat
       if (camera.position.distanceTo(smoothP) > 0.3 * Math.max(0.01, camera.position.distanceTo(anchor.position))) { camera.position.copy(smoothP); camera.quaternion.copy(smoothQ); }
       else { camera.position.lerp(smoothP, 0.6); camera.quaternion.slerp(smoothQ, 0.6); }
-      guard.apply(camera.position, state === 'placed' && lastHands.length > 0);
+      guard.apply(camera.position, lastHands.length > 0);
       if (state === 'scanning' && frameCount % 5 === 0) {
         stats.planeTries += 1;
         const planePose = alva.findPlane();
@@ -1076,7 +1081,8 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
     }
     if (pose && lost) { lost = false; status(''); }
     // mâinile (pe telefon tracking-ul + mâinile deodată sunt grele, așa că nu la fiecare cadru — vezi handEvery)
-    if (handsTracking && state === 'placed' && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame();
+    // și înainte de plasare: mâna acoperită în imaginea pentru SLAM nu poate fi luată drept masă
+    if (handsTracking && frameCount % handEvery(content) === 0) lastHands = handsTracking.frame(state === 'placed');
     world.tick(dt);
     content.update(dt);
     renderer.render(scene, camera);
