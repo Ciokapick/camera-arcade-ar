@@ -125,6 +125,8 @@ Trucul:
 
 5. La redare, cadrele (înregistrate la 60 fps) sunt **interpolate**, ca zarul să nu sacadeze cu încetinitorul sau pe ecranele de 120 Hz. Zborul merge aproape în timp real, iar spre final redarea încetinește. După oprire, zarul se așază perfect pe o față (fizica îl lasă uneori ușor înclinat).
 
+6. **Calculatorul** nu aruncă „din senin”: când îi vine rândul, își ia zarurile, le ține în aer în partea lui de masă și le agită ~1,5 s, cu clinchet („Calculator 1 agită zarurile…”). Gazda așteaptă pentru asta `BOT_SHAKE_MS` (`game.js`), iar fiecare telefon desenează agitatul singur (`app.js → botShake`), apoi le aruncă de acolo spre mijlocul mesei.
+
 Rezultatul: rostogolire 100% fizică, rezultat 100% decis dinainte. Fețele (punctele) sunt desenate dintr-un `<canvas>`, fără imagini.
 
 ---
@@ -148,6 +150,12 @@ Cu AlvaAR tabla „urca” și sărea, mai ales cu mâna în cadru. Am căutat a
 Cum e legat (`ar.js → startXR8`): 8th Wall desenează imaginea camerei pe un canvas al lui și ne dă, la fiecare cadru, poziția și rotația telefonului plus matricea de proiecție; noi desenăm jocul cu three.js pe un canvas transparent deasupra. „Pământul” lui (y = 0) e masa: pornim camera la 45 cm deasupra, deci unitățile ≈ metri. Atingerea pune jocul cu `hitTest` (sau, dacă nu răspunde, raza din deget intersectată cu planul y = 0). Pentru mână, `CameraPixelArray` ne dă pixelii camerei (480 px), din care MediaPipe găsește mâna; coordonatele se mută din imaginea întreagă în cea tăiată „cover” de pe ecran. La pariul cu bancnote 8th Wall e pus pe pauză (pe iPhone nu merg două camere deodată). Dacă 8th Wall nu pornește în 12 s, trecem singuri pe AlvaAR.
 
 Plasarea (comună tuturor modurilor, `createWorld` → `follow` / `place` / `tick`): cercul are exact mărimea jocului și urmărește suprafața lin (hit-test-ul tremură de la un cadru la altul; un salt mare înseamnă altă suprafață, deci se mută imediat). Un val pornește din centru, ca să se vadă că cercul e „viu”. Punctele prea depărtate (spre orizont) ascund cercul. La atingere, jocul „aterizează”: alunecă din cerc spre locul atins, coboară puțin și crește ușor peste mărimea finală. O umbră moale de contact îl lipește de masă (la zaruri nu, acolo cercul e doar zona de aruncat).
+
+Alegerea locului e mai ușoară (`placementControl`, pentru 8th Wall și AlvaAR):
+- **Masa recunoscută**: în jurul cercului apare o rețea de puncte întinsă pe suprafață. E verde-lime când masa e recunoscută sigur și albă când e doar estimată. Prima recunoaștere vibrează scurt.
+- **Cu degetul**: tragi cercul unde vrei; lăsat, rămâne fix pe masă, chiar dacă miști telefonul.
+- **Butonul „Pune aici”** fixează jocul. Dacă ții telefonul nemișcat ~2 s pe o masă recunoscută, butonul se umple și jocul se pune singur. O atingere pe masă îl pune tot acolo unde ai atins.
+- **După plasare, cu două degete**: muți jocul pe masă, îl rotești și îl mărești sau micșorezi (0,4×–2,5×). Al doilea deget anulează ce începuse primul (ex.: aruncatul zarurilor cu degetul).
 
 Licența cere să păstrăm mențiunea Niantic Spatial și trimiterea la licență — e în lobby, jos.
 

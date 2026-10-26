@@ -168,6 +168,9 @@
     #pawn-buttons .btn, #bet-button, #rps-bot { background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
     #ar-status { text-align: center; padding: 10px 14px; border-radius: 12px; background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); font-size: 14px; }
     #ar-status:empty { display: none; }
+    /* „Pune aici”: se umple de la stânga cât ții telefonul nemișcat; plin = jocul se pune singur */
+    #place-here { background: linear-gradient(90deg, #c9ff4a var(--p, 0%), var(--text) var(--p, 0%)); }
+    body.placing #main-action, body.placing #pawn-buttons, body.placing #bet-button { display: none !important; }
 
     /* foi de jos (alegerea modului, pariul) */
     .sheet { position: absolute; inset: 0; display: flex; align-items: flex-end; background: rgba(0,0,0,.5); pointer-events: auto; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
@@ -311,6 +314,7 @@
         <p id="ar-status"></p>
         <div class="row" id="pawn-buttons"></div>
         <button class="btn" id="bet-button" hidden></button>
+        <button class="btn primary big" id="place-here" hidden><iconify-icon icon="ph:map-pin"></iconify-icon>Pune aici</button>
         <button class="btn primary big" id="main-action" hidden></button>
         <button class="btn" id="rps-bot" hidden><iconify-icon icon="ph:robot"></iconify-icon>Joacă contra calculatorului</button>
       </div>

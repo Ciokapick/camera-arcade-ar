@@ -11,6 +11,8 @@ export const GESTURES = ['Piatră', 'Hârtie', 'Foarfecă'];
 const BEATS = { 'Piatră': 'Foarfecă', 'Foarfecă': 'Hârtie', 'Hârtie': 'Piatră' };
 // cât durează (cu încetinitorul din dice.js) până se opresc zarurile, plus un pic să citești punctele
 const DICE_SETTLE_MS = 3200;
+// înainte să arunce, calculatorul „ține” zarurile și le agită (animația e pe fiecare telefon, vezi app.js → botShake)
+export const BOT_SHAKE_MS = 1500;
 export const RPS_COUNTDOWN_MS = 2700; // 3… 2… 1… (câte 0,9 s), apoi „Acum!”
 // bancnotele românești în circulație (lei)
 export const NOTES = [1, 5, 10, 20, 50, 100, 200, 500];
@@ -373,16 +375,17 @@ export function hostTimers(room, now, memo, rand = Math.random) {
   // … și să se oprească zarurile aruncate înainte (ca să apuci să vezi punctele)
   if (room.roll && room.roll.seq !== memo.rollSeq) { memo.rollSeq = room.roll.seq; memo.rollAt = now; }
   const diceSettled = !room.roll || now - memo.rollAt > DICE_SETTLE_MS;
+  // aruncarea calculatorului: după ce zarurile de dinainte s-au oprit și le-a agitat o clipă
+  const botRollReady = since => since > 1200 + BOT_SHAKE_MS && (!room.roll || now - memo.rollAt > DICE_SETTLE_MS + BOT_SHAKE_MS);
   if (room.game === 'barbut') {
     const b = room.barbut;
     const turn = barbutTurn(b);
     const bot = room.players.find(p => p.id === turn && p.bot);
-    if (since('bot', !!bot) > 1200 && diceSettled) {
-      // pe bani, calculatorul pune și el o bancnotă înainte să arunce
-      out.push(b.money && !(bot.id in b.bets)
-        ? { action: { type: 'bet', amount: [5, 10, 20, 50][Math.floor(rand() * 4)] }, from: bot.id }
-        : { action: { type: 'roll', values: [die(), die()] }, from: bot.id });
-    }
+    const waited = since('bot', !!bot);
+    // pe bani, calculatorul pune și el o bancnotă înainte să arunce
+    if (bot && b.money && !(bot.id in b.bets)) {
+      if (waited > 1200 && diceSettled) out.push({ action: { type: 'bet', amount: [5, 10, 20, 50][Math.floor(rand() * 4)] }, from: bot.id });
+    } else if (bot && botRollReady(waited)) out.push({ action: { type: 'roll', values: [die(), die()] }, from: bot.id });
   }
   if (room.game === 'xo' && !room.xo.winner) {
     const s = room.xo;
@@ -398,11 +401,9 @@ export function hostTimers(room, now, memo, rand = Math.random) {
   if (room.game === 'ludo' && room.ludo.phase !== 'over') {
     const s = room.ludo;
     const bot = room.players.find(p => p.color === ludo.current(s) && p.bot);
-    if (since('bot', !!bot) > (s.phase === 'move' ? 700 : 1200) && diceSettled) {
-      out.push(s.phase === 'roll'
-        ? { action: { type: 'roll', values: [die()] }, from: bot.id }
-        : { action: { type: 'move', pawn: ludo.botMove(s, bot.color) }, from: bot.id });
-    }
+    const waited = since('bot', !!bot);
+    if (bot && s.phase === 'roll' && botRollReady(waited)) out.push({ action: { type: 'roll', values: [die()] }, from: bot.id });
+    if (bot && s.phase === 'move' && waited > 700 && diceSettled) out.push({ action: { type: 'move', pawn: ludo.botMove(s, bot.color) }, from: bot.id });
   }
   return out;
 }
