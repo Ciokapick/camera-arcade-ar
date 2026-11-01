@@ -224,6 +224,9 @@ function leaveGameView() {
   closeBetSheet();
   $('#stage-root').replaceChildren();
   $('#zoom-controls').hidden = true;
+  // „Pune aici” și ascunderea butoanelor de joc cât alegi locul nu trebuie să rămână pentru jocul următor
+  $('#place-here').hidden = true;
+  document.body.classList.remove('placing');
 }
 
 $('#back').addEventListener('click', () => {
@@ -292,12 +295,15 @@ function startStageView(v) {
     v.content = {
       group: tower.group, footprint: tower.footprint, screen: tower.screen, get busy() { return tower.busy; },
       pick: raycaster => pickBlock(raycaster),
-      drag: { start: grabBlock, move: dragBlock, end: dropBlock },
+      drag: { start: grabBlock, move: dragBlock, end: dropBlock, cancel: cancelBlock },
       hands: jengaHands,
       get handsActive() { const j = room?.state.jenga; return !!j && j.phase === 'pull' && jengaTurn(j) === room.selfId; },
       // piesa ținută rămâne în fața degetelor
       holes: () => { const p = tower.heldPosition; return p ? [{ world: tower.group.localToWorld(p), radius: 0.045 }] : []; },
-      update: dt => { if (tower.update(dt)) settled(); },
+      update: dt => {
+        if (v.aim && performance.now() - (v.lastHandsAt ?? 0) > 500) { tower.hover(null); v.aim = null; }
+        if (tower.update(dt)) settled();
+      },
     };
   } else {
     const board = createBoard();
@@ -310,7 +316,7 @@ function startStageView(v) {
       facing: SEAT[me().color],
       pick: raycaster => pickPawn(raycaster),
       hands: ludoHands,
-      drag: { start: pawnGrab, move: pawnCarry, end: pawnRelease },
+      drag: { start: pawnGrab, move: pawnCarry, end: pawnRelease, cancel: () => { if (!view.pawnGrab) return; view.pawnGrab = null; view.pawnOver = false; view.board.cancel(); renderLudo(room.state, me()); } },
       // în fața mâinii: zarul din palmă și pionul ținut
       holes: () => {
         const pawn = board.carriedPosition;
@@ -360,7 +366,7 @@ async function openMode(mode) {
         // WebXR n-are așezare automată: doar butonul
         if (real === 'webxr' && view === v) { $('#place-here').hidden = s !== 'found'; document.body.classList.toggle('placing', s === 'found'); }
         // + / − pentru mărimea jocului, cât timp e pus pe masă
-        if (view === v) $('#zoom-controls').hidden = !(s === 'placed' && real !== 'screen');
+        if (view === v) $('#zoom-controls').hidden = !(s === 'placed' && real !== 'screen' && real !== 'marker');
         if (s === 'closed' && view === v && v.stage === stage) { v.stage = null; v.mode = null; $('#ar-status').textContent = 'AR-ul s-a închis — apasă butonul cu cubul, sus.'; }
       },
       onTap: tapAction,
@@ -426,12 +432,13 @@ function animateNewRoll(state) {
   let launch = f?.start ? { start: new THREE.Vector3(...f.start), vel: new THREE.Vector3(...f.vel), dice: f.dice } : null;
   // calculatorul le aruncă din „mâna” în care le-a agitat, spre mijlocul mesei
   const shake = view.botShake;
-  if (!launch && roller?.bot && shake?.on && shake.bot.id === roller.id) {
-    const start = view.content.dice.meshes.reduce((sum, m) => sum.add(m.position), new THREE.Vector3()).divideScalar(view.content.dice.meshes.length);
+  // (din locul lui fix, deci la fel pe toate telefoanele — inclusiv pe markerul comun; zarurile din seed)
+  if (!launch && roller?.bot) {
+    const start = botHandPoint(view, roller, state);
     const vel = new THREE.Vector3(-start.x, 0, -start.z).setLength(state.game === 'ludo' ? 0.35 : 0.55);
     vel.y = 0.3;
-    launch = { start, vel, dice: view.content.dice.heldState() };
-    shake.on = false;
+    launch = { start, vel };
+    if (shake?.bot.id === roller.id) shake.on = false;
   }
   view.content.dice.throw({ values: roll.values, seed: roll.seq * 7919 + 17, from, power: f?.power, launch });
 }
@@ -470,16 +477,13 @@ function botShake(v, dt) {
   S.rattle -= dt;
   if (S.rattle <= 0) { sound.clack(0.2 + Math.random() * 0.25); S.rattle = 0.1 + Math.random() * 0.14; }
 }
-// unde „ține” calculatorul zarurile: la Ludo în dreptul locului lui, la zaruri vizavi de tine (ca să le vezi)
+// unde „ține” calculatorul zarurile: la Ludo în dreptul locului lui; la zaruri pe un loc fix al lui în jurul mesei
+// (nu „vizavi de tine”: aruncarea pornește de acolo și trebuie să fie aceeași pe toate telefoanele)
 function botHandPoint(v, bot, state) {
   if (state.game === 'ludo') return SEAT[bot.color].clone().multiplyScalar(BOARD_SIZE * 0.36).setY(TOP_Y + 0.05);
-  const cam = v.stage?.cameraLocal() ?? new THREE.Vector3(0, 0.4, 0.4);
-  const away = new THREE.Vector3(-cam.x, 0, -cam.z);
-  if (away.lengthSq() < 1e-6) away.set(0, 0, -1);
-  away.normalize();
-  const bots = state.players.filter(p => p.bot), i = bots.findIndex(p => p.id === bot.id);
-  const side = new THREE.Vector3(-away.z, 0, away.x).multiplyScalar((i - (bots.length - 1) / 2) * 0.09);
-  return away.multiplyScalar(0.11).add(side).setY(0.07);
+  const i = state.players.findIndex(p => p.id === bot.id);
+  const angle = Math.PI + i * 2.4; // primul calculator vizavi de gazdă, ceilalți împrăștiați
+  return new THREE.Vector3(Math.sin(angle) * 0.11, 0.07, Math.cos(angle) * 0.11);
 }
 
 function mainAction() {
@@ -1064,6 +1068,14 @@ function dragBlock(raycaster, _event, depth = null) {
     $('#info-small').textContent = 'A ieșit! Du-o sus, pe vârful turnului, și dă-i drumul.';
   }
 }
+// al doilea deget pe ecran (mutat / mărit jocul): piesa se întoarce la loc, fără să tragi
+function cancelBlock() {
+  if (!pulling) return;
+  pulling = null;
+  view.jenga.release();
+  view.jenga.select(null);
+  renderJenga(room.state, me());
+}
 function dropBlock() {
   if (!pulling) return;
   const { block, carrying, dir, luck } = pulling, moved = Math.abs(pulling.offset) > 0.003;
@@ -1096,6 +1108,8 @@ function jengaHands(hands) {
   }
   const ray = hand.ray(hand.mid(4, 8));
   const pinched = hand.pinchRatio < (v.grab ? PINCH_OFF : PINCH_ON);
+  v.lastHandsAt = now;
+  if (!pinched && !v.grab) v.handAt = null; // degete deschise: următorul ciupit pornește de la zero
   if (!v.grab) {
     const aim = mine ? v.jenga.nearest(ray, i => jenga.pullable(j.slots, i)) : null;
     if (aim !== null && !(pinched && v.aim)) {
@@ -1111,6 +1125,7 @@ function jengaHands(hands) {
     const g = v.content.group, at = g.worldToLocal(hand.world(hand.mid(4, 8)));
     v.handAt = v.handAt ? v.handAt.lerp(at, 0.35) : at;
     if (!v.grab && v.aim) {
+      v.handAt = at.clone();
       v.grab = grabBlock(ray, null, v.aim.block);
       if (v.grab) { v.jenga.hover(null); v.aim = null; v.grabAt = v.handAt.clone(); vibrate(15); }
     } else if (v.grab) {

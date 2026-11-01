@@ -142,6 +142,15 @@ function createWorld(content) {
     anchor.position.copy(drop.to);
     seen = false;
   };
+  // aterizarea se termină pe loc (ex.: începi să muți jocul cu două degete chiar atunci)
+  const settle = () => {
+    if (!drop) return;
+    anchor.position.copy(drop.to);
+    stand.scale.setScalar(1);
+    stand.position.y = 0;
+    blob.material.opacity = 1;
+    drop = null;
+  };
   const tick = dt => {
     time += dt;
     if (zoomTarget !== null) {
@@ -166,7 +175,7 @@ function createWorld(content) {
     blob.material.opacity = t;
     if (t === 1) { drop = null; stand.scale.setScalar(1); stand.position.y = 0; }
   };
-  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, tick, setSure, zoom, setZoom, zoomBy, units };
+  return { scene, anchor, reticle, shadowPlane, setScale, follow, place, settle, tick, setSure, zoom, setZoom, zoomBy, units };
 }
 
 // Rotește conținutul ca direcția `facing` să fie spre cameră (ex.: culoarea ta în fața ta)
@@ -379,7 +388,9 @@ const ndcFromEvent = (event, element) => {
 export async function openStage({ root, overlay, mode, content, status, setState = () => {}, onTap = () => {}, placing = () => {}, videoUrl }) {
   const world = createWorld(content);
   // pe ecran camera se potrivește după joc; în AR jocul poate fi mai mare decât în realitate, ca să-l vezi bine
-  if (mode !== 'screen') world.setZoom(content.zoom ?? 1);
+  // pe markerul comun nu: tabla trebuie să aibă aceeași mărime pe toate telefoanele (stă pe același marker)
+  const zoomable = mode !== 'screen' && mode !== 'marker';
+  if (zoomable) world.setZoom(content.zoom ?? 1);
   const common = { root, overlay, content, world, status, setState, onTap, placing, videoUrl };
   const stage = mode === 'webxr' ? await startWebXR(common)
     : mode === 'slam' ? await startTable(common)
@@ -388,7 +399,8 @@ export async function openStage({ root, overlay, mode, content, status, setState
   stage.mode = mode;
   stage.content = content;
   // butoanele + / −: mărește / micșorează jocul cu 25%, ține minte mărimea
-  stage.zoomBy = mode === 'screen' ? () => {} : f => content.onZoom?.(world.zoomBy(f));
+  stage.zoomBy = zoomable ? f => content.onZoom?.(world.zoomBy(f)) : () => {};
+  stage.zoomable = zoomable;
   // pentru testele automate
   window.__stage = stage;
   return stage;
@@ -450,11 +462,13 @@ function tapHandler(root, camera, content, world, onTap, isReady, canDrag = isRe
 // (accelerometrul), ținem poziția camerei de dinainte de mână (cu 0,2 s în urmă — detecția mâinii vine cu
 // întârziere) și luăm doar rotația, care vine din giroscop și nu e afectată. Când pleacă mâna, revenim lin.
 function handPoseGuard() {
-  let movedAt = 0, frozen = null, release = 0;
+  let movedAt = 0, sensorAt = -1e9, frozen = null, release = 0;
   const history = [], from = new THREE.Vector3();
   const onMotion = e => {
     const a = e.acceleration;
-    if (a?.x != null && Math.hypot(a.x, a.y, a.z) > 0.9) movedAt = performance.now();
+    if (a?.x == null) return;
+    sensorAt = performance.now();
+    if (Math.hypot(a.x, a.y, a.z) > 0.9) movedAt = sensorAt;
   };
   addEventListener('devicemotion', onMotion);
   return {
@@ -465,7 +479,8 @@ function handPoseGuard() {
         history.push({ t: now, p: position.clone() });
         while (history.length > 2 && now - history[1].t > 200) history.shift();
       }
-      if (handInView && now - movedAt > 400) {
+      // fără accelerometru (permisiune refuzată, Android fără `acceleration`) nu știm dacă telefonul stă: nu înghețăm
+      if (handInView && now - sensorAt < 1000 && now - movedAt > 400) {
         frozen ??= (history[0]?.p ?? position).clone();
         position.copy(frozen);
         return;
@@ -486,7 +501,7 @@ function handPoseGuard() {
 //  - după: cu două degete muți jocul pe masă, îl rotești și îl mărești / micșorezi.
 // hit(x, y) ∈ [0, 1] → { point, sure } sau null; place(point); progress(0..1 | null) pentru buton.
 const AUTO_PLACE_S = 1.8;
-function placementControl({ root, camera, world, content, hit, place, progress, status, getState, center = [0.5, 0.5], handInView = () => false }) {
+function placementControl({ root, camera, world, content, hit, place, progress, status, getState, center = [0.5, 0.5], handInView = () => false, canClearStatus = () => true }) {
   const { anchor } = world;
   // pinned: punctul de pe ecran cât tragi cercul; dropped: locul de pe masă unde l-ai lăsat (nu mai fuge cu telefonul)
   let pinned = null, dropped = null, hold = 0, sure = false, last = 0, gesture = null, hinted = false;
@@ -505,7 +520,7 @@ function placementControl({ root, camera, world, content, hit, place, progress, 
     if (e.target.closest?.('button, input, a, .panel')) return;
     pointers.set(e.pointerId, e);
     if (getState() === 'found' && pointers.size === 1) { pinned = rel(e); dropped = null; hold = 0; }
-    if (getState() === 'placed' && pointers.size === 2) gesture = snapshot();
+    if (getState() === 'placed' && pointers.size === 2) { world.settle(); gesture = snapshot(); }
   };
   const onMove = e => {
     if (!pointers.has(e.pointerId)) return;
@@ -565,7 +580,7 @@ function placementControl({ root, camera, world, content, hit, place, progress, 
       pinned = dropped = null;
       hold = 0;
       progress(null);
-      if (!hinted) { hinted = true; status('Gata! Cu două degete muți, rotești și mărești jocul.'); setTimeout(() => { if (getState() === 'placed') status(''); }, 3500); }
+      if (!hinted) { hinted = true; status('Gata! Cu două degete muți, rotești și mărești jocul.'); setTimeout(() => { if (getState() === 'placed' && canClearStatus()) status(''); }, 3500); }
     },
     reset() { pinned = dropped = null; hold = 0; sure = false; history.length = 0; },
     get gesturing() { return pointers.size > 1; },
@@ -855,7 +870,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
     status('');
     control.placed();
   };
-  const control = placementControl({ root, camera, world, content, hit: hitAt, place, progress: placing, status, getState: () => state, center: [0.5, 0.55], handInView: () => lastHands.length > 0 });
+  const control = placementControl({ root, camera, world, content, hit: hitAt, place, progress: placing, status, getState: () => state, center: [0.5, 0.55], handInView: () => lastHands.length > 0, canClearStatus: () => !wasLimited });
 
   const offTap = tapHandler(root, camera, content, world, onTap, event => {
     if (state === 'scanning') { status('Încă pornesc urmărirea — mișcă puțin telefonul, cu masa în cadru.'); return false; }
