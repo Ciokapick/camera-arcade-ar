@@ -259,27 +259,96 @@ const handEvery = content => (content.handsFast ? 1 : content.handsActive === fa
 // coordonatele ecranului (map), iar mâna se calculează pe dimensiunile ecranului.
 function handTracking(source, camera, focal, content, world, view = null) {
   if (!content.hands) return null;
-  let tracker = null, stamp = 0, failed = false;
-  loadHandTracker('GPU', 1).catch(() => loadHandTracker('CPU', 1)).then(t => { tracker = t; }, error => { console.warn(error); failed = true; });
   const scale = new THREE.Vector3();
+  // cifre pentru panoul de diagnostic (?debug): unde rulează, cât durează o detecție, câte pe secundă, ce vede
+  const stats = { path: 'pornește', delegate: null, ms: 0, perSecond: 0, count: 0, hand: null };
+  let detections = 0, since = performance.now();
+  const toHands = landmarks => {
+    scale.setScalar(world.units());
+    const f = typeof focal === 'function' ? focal() : focal;
+    return landmarks.map(l => (view
+      ? makeHand(l.map(view.map), { width: view.width, height: view.height, focal: f, camera, metersToWorld: scale.x })
+      : makeHand(l, { width: source.width, height: source.height, focal: f, camera, metersToWorld: scale.x })));
+  };
+  const record = (hands, ms) => {
+    detections += 1;
+    stats.ms = stats.ms ? stats.ms * 0.8 + ms * 0.2 : ms;
+    const now = performance.now();
+    if (now - since >= 1000) { stats.perSecond = Math.round(detections * 1000 / (now - since)); detections = 0; since = now; }
+    stats.count = hands.length;
+    const h = hands[0];
+    stats.hand = h ? { gesture: h.gesture, open: +h.open.toFixed(2), pinch: +(h.pinchRatio ?? 0).toFixed(2), depth: +h.depth.toFixed(2) } : null;
+  };
+
+  // pe firul principal (rezerva, și singura variantă fără Worker / cu ?mainhands)
+  let tracker = null, stamp = 0;
+  const startMain = reason => {
+    stats.path = 'principal';
+    if (reason) stats.reason = reason;
+    loadHandTracker('GPU', 1).then(t => { stats.delegate = 'GPU'; return t; }, () => loadHandTracker('CPU', 1).then(t => { stats.delegate = 'CPU'; return t; }))
+      .then(t => { tracker = t; }, error => { console.warn(error); stats.path = 'eșuat'; });
+  };
+
+  // în fundal (Web Worker): cadrul pleacă ca ImageBitmap, reperele vin un pic mai târziu — până atunci folosim
+  // ultimele mâini găsite. Dacă worker-ul nu pornește în 15 s sau dă erori la rând, trecem pe firul principal.
+  let worker = null, busy = false, latest = [], deliverNext = true, errors = 0, frameId = 0;
+  if (typeof Worker === 'function' && typeof createImageBitmap === 'function' && !params.has('mainhands')) {
+    try {
+      worker = new Worker(new URL('./hands-worker.js', import.meta.url));
+      stats.path = 'fundal (pornește)';
+      const giveUp = reason => { worker?.terminate(); worker = null; busy = false; startMain(reason); };
+      const timeout = setTimeout(() => giveUp('worker-ul nu a pornit în 15 s'), 15000);
+      worker.onmessage = ({ data }) => {
+        if (data.type === 'ready') { clearTimeout(timeout); stats.path = 'fundal'; stats.delegate = data.delegate; return; }
+        if (data.type === 'error') { clearTimeout(timeout); giveUp(data.message); return; }
+        if (data.type !== 'result') return;
+        busy = false;
+        if (data.error) { if (++errors >= 5) giveUp(data.error); return; }
+        errors = 0;
+        latest = toHands(data.landmarks);
+        record(latest, data.ms);
+        if (deliverNext) content.hands(latest);
+      };
+      worker.onerror = event => { clearTimeout(timeout); giveUp(event.message || 'eroare în worker'); };
+      worker.postMessage({ type: 'init', numHands: 1 });
+    } catch (error) {
+      worker = null;
+      startMain(String(error?.message || error));
+    }
+  } else {
+    startMain(params.has('mainhands') ? '?mainhands' : 'fără Worker');
+  }
+
   return {
-    get ready() { return !!tracker; },
-    get failed() { return failed; },
+    stats,
+    get ready() { return stats.path === 'fundal' || !!tracker; },
+    get failed() { return stats.path === 'eșuat'; },
     // apelat după ce s-a desenat cadrul; întoarce mâinile (ca să le poată desena scena)
     // deliver = false: doar le găsim (ca să nu le ia urmărirea drept masă), jocul nu le primește încă
     frame(deliver = true) {
+      if (worker) {
+        if (stats.path === 'fundal' && !busy) {
+          busy = true;
+          deliverNext = deliver;
+          const id = ++frameId;
+          createImageBitmap(source).then(bitmap => {
+            if (!worker) { bitmap.close(); return; }
+            worker.postMessage({ type: 'frame', id, bitmap, ts: Math.max(stamp = Math.max(stamp + 1, performance.now()), 0) }, [bitmap]);
+          }, () => { busy = false; });
+        }
+        return latest;
+      }
       if (!tracker) return [];
       stamp = Math.max(stamp + 1, performance.now());
+      const t0 = performance.now();
       let result;
       try { result = tracker.detectForVideo(source, stamp); } catch (error) { console.warn(error); return []; }
-      scale.setScalar(world.units());
-      const f = typeof focal === 'function' ? focal() : focal;
-      const hands = (result.landmarks || []).map(l => (view
-        ? makeHand(l.map(view.map), { width: view.width, height: view.height, focal: f, camera, metersToWorld: scale.x })
-        : makeHand(l, { width: source.width, height: source.height, focal: f, camera, metersToWorld: scale.x })));
+      const hands = toHands(result.landmarks || []);
+      record(hands, performance.now() - t0);
       if (deliver) content.hands(hands);
       return hands;
     },
+    close() { worker?.terminate(); worker = null; },
   };
 }
 // Mâna reală peste tabla virtuală (ocluzie): din imaginea camerei decupăm silueta mâinii — oasele degetelor ca
@@ -816,6 +885,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
   handCanvas.height = Math.round(360 * H / W);
   const handCtx = handCanvas.getContext('2d', { willReadFrequently: true });
   const handsTracking = content.hands ? handTracking(handCanvas, camera, () => focal * handCanvas.width / W, content, world) : null;
+  stats.hands = handsTracking?.stats ?? null;
   const occlusion = handsTracking && handOcclusion(root, W, H);
   let lastHands = [];
 
@@ -898,6 +968,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
         guard.apply(camera.position, lastHands.length > 0);
         camera.updateMatrixWorld(true);
         stats.poses += 1;
+        stats.tracking = r.trackingStatus + (r.trackingReason && r.trackingReason !== 'UNSPECIFIED' ? ` (${r.trackingReason})` : '');
         if (state === 'scanning' && r.trackingStatus === 'NORMAL') {
           go('found');
           reticle.visible = true;
@@ -971,6 +1042,7 @@ async function startXR8({ root, content, world, status, setState, onTap, placing
       XR8.stop();
       XR8.clearCameraPipelineModules();
       occlusion?.remove();
+      handsTracking?.close();
       feed.remove();
       renderer.domElement.remove();
       renderer.dispose();
@@ -1052,6 +1124,8 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
   }
 
   const handsTracking = handTracking(canvas, camera, L.focal, content, world);
+  stats.engine = 'alva';
+  stats.hands = handsTracking?.stats ?? null;
   const occlusion = handsTracking && handOcclusion(root, L.w, L.h);
   const slamCanvas = document.createElement('canvas');
   slamCanvas.width = L.w;
@@ -1164,6 +1238,7 @@ async function startSlam({ root, content, world, status, setState, onTap, videoU
       video.remove();
       canvas.remove();
       occlusion?.remove();
+      handsTracking?.close();
       renderer.domElement.remove();
       renderer.dispose();
     },
@@ -1247,6 +1322,7 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
 
   const offTap = tapHandler(root, camera, content, world, onTap, () => state === 'placed');
   const handsTracking = handTracking(canvas, camera, L.focal, content, world);
+  const stats = { frames: 0, engine: 'marker', hands: handsTracking?.stats ?? null };
   const occlusion = handsTracking && handOcclusion(root, L.w, L.h);
   let frameCount = 0, lastHands = [];
 
@@ -1255,12 +1331,14 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
     const dt = last ? Math.min((time - last) / 1000, 0.05) : 1 / 60;
     last = time;
     frameCount += 1;
+    stats.frames += 1;
     ctx.drawImage(video, L.dx, L.dy, L.vw * L.cover, L.vh * L.cover);
     const markers = detector.detect(ctx.getImageData(0, 0, L.w, L.h));
     const marker = markers.find(m => m.id === MARKER_ID);
     if (marker) onMarker(marker.corners);
     // mâna acoperă des markerul când muți un pion: tabla rămâne unde era încă 1,5 s
     const visible = performance.now() - seenAt < 1500;
+    stats.tracking = marker ? 'marker văzut' : visible ? 'marker pierdut (țin tabla)' : 'caut markerul';
     anchor.visible = visible;
     go(visible ? 'placed' : 'scanning');
     status(visible ? '' : 'Caut markerul… ține-l întreg în cadru.');
@@ -1278,6 +1356,7 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
   return {
     camera,
     video,
+    stats,
     get state() { return state; },
     cameraLocal: () => content.group.worldToLocal(new THREE.Vector3()),
     replace() {},
@@ -1289,6 +1368,7 @@ async function startMarker({ root, content, world, status, setState, onTap, vide
       video.remove();
       canvas.remove();
       occlusion?.remove();
+      handsTracking?.close();
       renderer.domElement.remove();
       renderer.dispose();
     },
