@@ -1422,6 +1422,8 @@ function renderLocalIdle(v) {
 
 // ---------------------------------------------------------------- start
 
+// panoul de diagnostic (debug.js), doar cu ?debug în adresă
+if (new URLSearchParams(location.search).has('debug')) import('./debug.js').then(m => m.startDebug(() => ({ view, room })));
 const begin = () => (myName ? startLocal() : askName());
 // La pornire cerem camera (și, pe iPhone, giroscopul — trebuie cerut dintr-o atingere, înainte de orice await).
 $('#camera-allow').addEventListener('click', async () => {
