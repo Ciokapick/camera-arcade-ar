@@ -17,6 +17,8 @@ const LIB = path.join(__dirname, '.libs');
   await page.waitForTimeout(600);
   await page.click('[data-game="jenga"]');
   await page.waitForTimeout(2000);
+  // implicit: piesa din față a nivelului 8 (slot 2). Cea din mijloc (slot 1) are fața ascunsă de cea din față: raza
+  // spre ea trece deasupra și nimerește nivelul de sus — aplicația apucă (corect) piesa pe care o vezi.
   const result = await page.evaluate(async ({ level, slot, aimOff }) => {
     const THREE = await import('three');
     const { makeHand } = await import('./ar.js');
@@ -71,7 +73,7 @@ const LIB = path.join(__dirname, '.libs');
     log.push(highest > 0.27 ? `OK: o piesă a ajuns sus (${highest.toFixed(3)} m)` : `EȘEC: nicio piesă sus (cea mai înaltă la ${highest.toFixed(3)} m)`);
     log.push('after: ' + document.querySelector('#info-big').textContent + ' | ' + document.querySelector('#info-small').textContent);
     return log;
-  }, { level: Number(process.env.LEVEL || 8), slot: Number(process.env.SLOT || 1), aimOff: JSON.parse(process.env.OFF || '[0,0,0]') });
+  }, { level: Number(process.env.LEVEL || 8), slot: Number(process.env.SLOT || 2), aimOff: JSON.parse(process.env.OFF || '[0,0,0]') });
   console.log(result.join('\n'), errs);
   await page.screenshot({ path: `${__dirname}/.out/jenga-after.png` });
   await browser.close();

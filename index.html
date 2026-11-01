@@ -171,7 +171,7 @@
     /* „Pune aici”: se umple de la stânga cât ții telefonul nemișcat; plin = jocul se pune singur */
     #place-here { background: linear-gradient(90deg, #c9ff4a var(--p, 0%), var(--text) var(--p, 0%)); }
     #zoom-controls { position: fixed; right: 12px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 11; }
-    #zoom-controls[hidden] { display: none; }
+    #zoom-controls[hidden], body:has(#bet-sheet:not([hidden])) #zoom-controls, body:has(#sheet:not([hidden])) #zoom-controls { display: none; }
     #zoom-controls .icon-btn { width: 46px; height: 46px; }
     body.placing #main-action, body.placing #pawn-buttons, body.placing #bet-button { display: none !important; }
 
