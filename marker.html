@@ -11,6 +11,7 @@
     /* pătratul negru al markerului = 15 cm la printare (SVG-ul are 1 unitate de margine albă din 10) */
     #marker { width:18.75cm; max-width:100%; margin:16px auto; }
     #marker svg { width:100%; height:auto; display:block; }
+    code { background:#f2f2f2; padding:1px 5px; border-radius:5px; }
     button { font:inherit; font-weight:700; padding:10px 18px; border-radius:10px; border:0; background:#111; color:#fff; }
     @media print { .no-print { display:none; } body { padding:0; } }
   </style>
@@ -19,9 +20,11 @@
 </head>
 <body>
   <div class="no-print">
-    <h1>Marker comun pentru „Nu te supăra, frate”</h1>
-    <p>Pune markerul pe masă, la mijlocul jucătorilor. Fiecare apasă în joc <b>🎯 Marker comun</b> și îndreaptă camera spre el: tabla apare exact pe marker, în același loc pentru toți.</p>
-    <p>Printează pagina la mărime reală (100%, fără „fit to page”): pătratul negru are 15 cm. Merge și afișat pe o tabletă sau laptop pus pe masă.</p>
+    <h1>Markerul comun</h1>
+    <p>Pune markerul pe masă, la mijloc. În joc, apasă butonul cu cubul (sus) → <b>Pe markerul comun</b> și îndreaptă camera spre el: jocul apare exact pe marker, <b>în același loc pentru toți</b> cei din cameră. Merge la toate jocurile.</p>
+    <p>E și varianta cea mai stabilă: poziția vine direct din marker, nu din recunoașterea mesei. Dacă la o prezentare masa nu e recunoscută bine (masă albă, lucioasă, lumină slabă), folosește markerul.</p>
+    <p><b>Printat:</b> la mărime reală (100%, fără „fit to page”) — pătratul negru are 15 cm.<br>
+      <b>Pe o tabletă sau un laptop</b> pus pe masă: măsoară latura pătratului negru pe ecran și pune-o în adresa jocului, în metri, de exemplu <code>?marker=0.12</code> pentru 12 cm.</p>
     <button onclick="print()">Printează</button>
   </div>
   <div id="marker"></div>
