@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as CANNON from 'cannon-es';
 import { sound } from './sound.js';
+import { createVirtualHand } from './virtual-hand.js';
 
 // Ordinea materialelor la BoxGeometry: +X, -X, +Y, -Y, +Z, -Z. Fețele opuse însumează 7.
 const FACE_VALUES = [3, 4, 1, 6, 2, 5];
@@ -76,6 +77,12 @@ function relabel(got, want) {
  * @param bounds  jumătatea laturii zonei închise de pereți invizibili (m), sau null pentru masă liberă
  */
 export function createDice(parent, { count, size, floor = 0, bounds = null }) {
+  const hand = createVirtualHand();
+  hand.group.visible = false;
+  hand.group.rotation.x = -Math.PI / 2;
+  hand.group.scale.setScalar(size / 0.035);
+  parent.add(hand.group);
+  let handRelease = 0, virtualHold = false;
   const geometry = new RoundedBoxGeometry(size, size, size, 4, size * 0.14);
   const meshes = Array.from({ length: count }, () => {
     const mesh = new THREE.Mesh(geometry, faceMaterials());
@@ -139,7 +146,7 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
       const start = fromHand ? new THREE.Vector3(...fromHand.p) : launch ? launch.start.clone().addScaledVector(side, offset) : forward.clone().multiplyScalar(-reach).addScaledVector(side, offset);
       // cu pereți (tabla de Ludo), aruncat fără zarurile din mână: pornește înăuntrul lor
       if (launch && bounds && !fromHand) { start.x = Math.max(-bounds * 0.8, Math.min(bounds * 0.8, start.x)); start.z = Math.max(-bounds * 0.8, Math.min(bounds * 0.8, start.z)); }
-      body.position.set(start.x, launch ? Math.max(floor + size, start.y) : floor + 0.1 + size * 2, start.z);
+      body.position.set(start.x, launch ? Math.max(floor + size, start.y) : floor + 0.045 + size, start.z);
       body.quaternion.setFromEuler(rand() * 6.3, rand() * 6.3, rand() * 6.3);
       if (fromHand) body.quaternion.set(...fromHand.q);
       const speed = (0.15 + rand() * 0.15) * (0.5 + power);
@@ -183,27 +190,41 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     get busy() { return !!playback && !playback.done; },
     /** values: valorile cerute; seed: același pe toate telefoanele; from: direcția (locală) din care vin zarurile */
     throw({ values, seed, from, power, launch }) {
+      const wasVirtual = virtualHold && !!held;
       held = null;
       const { frames, impacts } = simulate(seed, from, power, launch);
       const last = frames.at(-1);
       const fix = last.map((f, i) => relabel(topValue(new THREE.Quaternion(f[3], f[4], f[5], f[6])), values[i]));
       playback = { frames, impacts, fix, t: 0, frame: -1, values, done: false, snap: null, appear: launch?.dice ? 1 : 0 };
+      // Mâna reală eliberează imediat; aruncarea tactilă are o pregătire vizibilă.
+      playback.windup = launch?.dice || wasVirtual ? 0 : 0.65;
+      handRelease = launch?.dice ? 0 : 0.4;
+      hand.group.visible = !launch?.dice;
+      hand.group.scale.setScalar(size / 0.035);
+      hand.pose('open');
+      const first = frames[0];
+      hand.group.position.set(first.reduce((s, f) => s + f[0], 0) / count, first[0][1] - size * 0.6, first.reduce((s, f) => s + f[2], 0) / count);
       meshes.forEach(m => { m.visible = true; });
     },
     // zarurile în mână: urmăresc punctul `at` (local) lin, rotindu-se ușor (null = nu mai sunt în mână);
     // closed = pumn: stau strânse și se scutură
-    hold(at, closed = false) {
+    hold(at, closed = false, virtual = false) {
       if (this.busy) return;
       playback = null;
       held = at ? at.clone() : null;
       meshes.forEach(m => m.scale.setScalar(1));
       holdClosed = closed;
+      virtualHold = virtual;
+      hand.group.visible = !!at && virtual;
+      hand.group.scale.setScalar(size / 0.035);
+      hand.pose(closed ? 'cup' : 'open');
       meshes.forEach(m => { m.visible = !!at; });
     },
     // cum sunt zarurile în mână acum (local): poziție și rotație, ca aruncarea să pornească exact de aici
     heldState: () => meshes.map(m => ({ p: m.position.toArray(), q: m.quaternion.toArray() })),
     // avansează animația; întoarce valorile o singură dată, când zarurile s-au oprit
     update(dt) {
+      hand.update(dt);
       if (held) {
         holdTime += dt;
         meshes.forEach((m, i) => {
@@ -212,8 +233,26 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
           m.position.lerp(target, Math.min(1, dt * 14));
           m.rotation.set(holdTime * (holdClosed ? 4 : 0.7) + i, holdTime * (holdClosed ? 3 : 0.5), 0);
         });
+        if (virtualHold) hand.group.position.copy(held);
         return null;
       }
+      if (playback?.windup > 0) {
+        playback.windup = Math.max(0, playback.windup - dt);
+        const first = playback.frames[0], wobble = Math.sin(playback.windup * 30) * size * 0.12;
+        hand.pose(playback.windup > 0.18 ? 'cup' : 'open');
+        hand.group.position.y = first[0][1] - size * 0.6 + wobble;
+        meshes.forEach((m, i) => {
+          const f = first[i]; m.position.set(f[0], f[1] + wobble, f[2]);
+          m.quaternion.set(f[3], f[4], f[5], f[6]).multiply(playback.fix[i]); m.scale.setScalar(1);
+        });
+        return null;
+      }
+      if (handRelease > 0) {
+        handRelease = Math.max(0, handRelease - dt);
+        hand.pose('open'); hand.group.position.y += dt * 0.14;
+        hand.group.scale.setScalar(size / 0.035 * handRelease / 0.4);
+        if (!handRelease) hand.group.visible = false;
+      } else if (!held) hand.group.visible = false;
       if (!playback || playback.done) return null;
       const { frames } = playback, n = frames.length;
       if (playback.snap) return snap(dt);
@@ -248,7 +287,9 @@ export function createDice(parent, { count, size, floor = 0, bounds = null }) {
     },
     hide() {
       playback = null;
+      held = null; handRelease = 0; hand.group.visible = false;
       meshes.forEach(m => { m.visible = false; });
     },
+    dispose() { hand.dispose(); geometry.dispose(); },
   };
 }

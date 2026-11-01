@@ -1,62 +1,9 @@
-// Piatră–hârtie–foarfecă în AR: deasupra fiecărei mâini din cameră plutește gestul ei, ca obiect 3D (o piatră,
-// o foaie, o foarfecă). Adversarul (calculatorul sau ceilalți din cameră) apare sus, „gândindu-se” cât numărăm.
-// La final obiectele se ciocnesc: câștigătorul zboară spre cel învins, care se sparge în bucăți.
+// Mâini articulate deasupra gesturilor reale; adversarii bat ritmul cu pumnul și dezvăluie gestul la rezultat.
 import * as THREE from 'three';
 import { makeHand, CAMERA_FOV } from './ar.js';
+import { createVirtualHand } from './virtual-hand.js';
 
 const COLORS = { 'Piatră': 0x9aa0a8, 'Hârtie': 0xf4f1e8, 'Foarfecă': 0xd8dde3 };
-const GESTURES = ['Piatră', 'Hârtie', 'Foarfecă'];
-
-function linedPaper() {
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 170;
-  const g = c.getContext('2d');
-  g.fillStyle = '#f7f4ec'; g.fillRect(0, 0, 128, 170);
-  g.strokeStyle = 'rgba(70, 110, 200, .45)'; g.lineWidth = 2;
-  for (let y = 22; y < 170; y += 14) { g.beginPath(); g.moveTo(8, y); g.lineTo(120, y); g.stroke(); }
-  g.strokeStyle = 'rgba(220, 60, 60, .5)'; g.beginPath(); g.moveTo(22, 0); g.lineTo(22, 170); g.stroke();
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-function makeModel(gesture) {
-  const group = new THREE.Group();
-  if (gesture === 'Piatră') {
-    const geometry = new THREE.IcosahedronGeometry(0.03, 1);
-    const pos = geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const k = 0.82 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.3;
-      pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k * 0.85, pos.getZ(i) * k);
-    }
-    geometry.computeVertexNormals();
-    group.add(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: COLORS['Piatră'], roughness: 0.95, flatShading: true })));
-  } else if (gesture === 'Hârtie') {
-    const sheet = new THREE.Mesh(new THREE.PlaneGeometry(0.055, 0.073, 6, 1), new THREE.MeshStandardMaterial({ map: linedPaper(), roughness: 0.9, side: THREE.DoubleSide }));
-    // ușor curbată
-    const pos = sheet.geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin((pos.getX(i) / 0.055 + 0.5) * Math.PI) * 0.006);
-    sheet.geometry.computeVertexNormals();
-    group.add(sheet);
-  } else {
-    const steel = new THREE.MeshStandardMaterial({ color: COLORS['Foarfecă'], metalness: 0.8, roughness: 0.25 });
-    const grip = new THREE.MeshStandardMaterial({ color: 0xe5484d, roughness: 0.5 });
-    for (const side of [-1, 1]) {
-      const arm = new THREE.Group();
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.05, 0.002), steel);
-      blade.position.y = 0.025;
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.009, 0.0028, 8, 20), grip);
-      ring.position.y = -0.012;
-      arm.add(blade, ring);
-      arm.rotation.z = side * 0.32;
-      arm.userData.side = side;
-      group.add(arm);
-    }
-    group.userData.scissors = true;
-  }
-  group.traverse(o => { o.castShadow = false; });
-  return group;
-}
 
 export function createRpsScene(container, video) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -97,10 +44,14 @@ export function createRpsScene(container, video) {
   }
   function setModel(s, gesture) {
     if (s.gesture === gesture) return;
-    if (s.model) s.root.remove(s.model);
+    if (!s.hand && gesture) {
+      s.hand = createVirtualHand();
+      s.model = s.hand.group;
+      s.model.scale.setScalar(0.55);
+      s.root.add(s.model);
+    }
     s.gesture = gesture;
-    s.model = gesture ? makeModel(gesture) : null;
-    if (s.model) { s.root.add(s.model); s.pop = 0; }
+    if (s.hand) { s.hand.pose(gesture || 'Piatră'); s.model.visible = !!gesture; }
   }
 
   const pieces = [];
@@ -113,8 +64,8 @@ export function createRpsScene(container, video) {
       scene.add(m);
       pieces.push({ m, v, life: 1.3 });
     }
-    s.root.visible = false;
-    s.broken = true;
+    // Feedback de înfrângere fără a sparge mâna în bucăți.
+    s.defeated = true;
   }
 
   let thinking = 0, clash = null, time = 0, raf = 0, last = 0;
@@ -129,11 +80,13 @@ export function createRpsScene(container, video) {
       const breathe = clash ? 1 : 1 + Math.sin(time * 3 + key.length) * 0.04;
       s.root.scale.setScalar((0.4 + 0.6 * s.pop) * breathe);
       s.root.position.lerp(s.target, Math.min(1, dt * (clash ? 6 : 14)));
-      s.model.rotation.y = time * 1.2;
-      if (s.model.userData.scissors) s.model.children.forEach(arm => { arm.rotation.z = arm.userData.side * (0.12 + Math.abs(Math.sin(time * 6)) * 0.3); });
+      s.hand?.update(dt);
+      const tilt = s.defeated ? -0.6 : s.thinking ? Math.sin(time * Math.PI * 2 / 0.9) * 0.3 : Math.sin(time * 2) * 0.06;
+      s.model.rotation.z = THREE.MathUtils.lerp(s.model.rotation.z, tilt, Math.min(1, dt * 10));
+      s.model.rotation.x = s.thinking ? -0.2 : 0;
     }
     // adversarul se „gândește”: își tot schimbă gestul
-    if (thinking) for (const [key, s] of slots) if (key.startsWith('opp') && s.thinking) setModel(s, GESTURES[Math.floor(time * 7 + key.length) % 3]);
+    if (thinking) for (const [key, s] of slots) if (key.startsWith('opp') && s.thinking) setModel(s, 'Piatră');
     if (clash) {
       clash.t += dt;
       if (!clash.hit && clash.t > 0.5) {
@@ -145,7 +98,7 @@ export function createRpsScene(container, video) {
         for (const s of clash.movers) s.target.copy(s.home);
       }
       if (clash.t > 1.9) {
-        for (const s of clash.losers) { s.broken = false; s.root.visible = !!s.model; }
+        for (const s of clash.losers) { s.defeated = false; }
         clash = null;
       }
     }
@@ -156,7 +109,7 @@ export function createRpsScene(container, video) {
       p.m.position.addScaledVector(p.v, dt);
       p.m.rotation.x += dt * 8;
       p.m.scale.setScalar(Math.max(0, p.life));
-      if (p.life <= 0) { scene.remove(p.m); pieces.splice(i, 1); }
+      if (p.life <= 0) { scene.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); pieces.splice(i, 1); }
     }
     renderer.render(scene, camera);
   }
@@ -167,7 +120,7 @@ export function createRpsScene(container, video) {
   const toDisplay = landmarks => landmarks.map(p => ({ x: (p.x * layout.vw * layout.cover + layout.offX) / layout.W, y: (p.y * layout.vh * layout.cover + layout.offY) / layout.H, z: p.z }));
 
   return {
-    /** mâinile din cameră (cum le dă trackHands): fiecare primește deasupra gestul ei */
+    /** Mâinile din cameră primesc fiecare un avatar al gestului recunoscut. */
     setHands(hands) {
       if (clash) return;
       if (layout.vw !== video.videoWidth && video.videoWidth) resize();
@@ -177,11 +130,15 @@ export function createRpsScene(container, video) {
         const h = makeHand(toDisplay(hand.landmarks), { width: layout.W, height: layout.H, focal: layout.focal, camera });
         const p = h.world(h.palm());
         // deasupra mâinii (în sus pe ecran), cam cât o palmă
-        const target = p.clone().add(new THREE.Vector3(0, h.depth * 0.32, 0));
+        const target = p.clone().add(new THREE.Vector3(0, h.depth * 0.12, 0));
+        const halfH = Math.tan(camera.fov * Math.PI / 360) * Math.abs(target.z);
+        target.x = THREE.MathUtils.clamp(target.x, -halfH * camera.aspect * 0.7, halfH * camera.aspect * 0.7);
+        target.y = THREE.MathUtils.clamp(target.y, -halfH * 0.5, halfH * 0.35);
         if (!s.root.visible) s.root.position.copy(target);
         s.target.copy(target);
         s.home = target.clone();
         setModel(s, hand.gesture);
+        s.model.scale.setScalar(Math.min(0.55, h.depth * 0.9));
         s.root.visible = !s.broken;
       }
     },
@@ -219,13 +176,15 @@ export function createRpsScene(container, video) {
       clash = { t: 0, losers: all.filter(x => x.r === 'lose').map(x => x.s), movers };
     },
     clear() {
-      for (const s of slots.values()) { s.root.visible = false; setModel(s, null); s.broken = false; }
+      for (const s of slots.values()) { s.root.visible = false; setModel(s, null); s.broken = false; s.defeated = false; }
       thinking = 0;
       clash = null;
     },
     dispose() {
       cancelAnimationFrame(raf);
       removeEventListener('resize', resize);
+      for (const s of slots.values()) s.hand?.dispose();
+      for (const p of pieces) { p.m.geometry.dispose(); p.m.material.dispose(); }
       renderer.domElement.remove();
       renderer.dispose();
     },

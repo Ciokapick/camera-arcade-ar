@@ -217,6 +217,7 @@ function leaveGameView() {
   v.stage?.close();
   v.stopHands?.();
   v.rps3d?.dispose();
+  v.content?.dice?.dispose();
   clearTimeout(v.countdownTimer);
   stopRpsCamera();
   showBeat(null);
@@ -473,7 +474,7 @@ function botShake(v, dt) {
   // tremurat mai tare spre final, ca și cum s-ar pregăti să arunce
   const t = (now - S.since - BOT_PICKUP_MS) / 1000;
   const wobble = new THREE.Vector3(Math.sin(t * 17) * 0.012, Math.abs(Math.sin(t * 11)) * 0.015, Math.cos(t * 13) * 0.008).multiplyScalar(state.game === 'ludo' ? 0.6 : 1);
-  dice.hold(S.at.clone().add(wobble), true);
+  dice.hold(S.at.clone().add(wobble), true, true);
   S.rattle -= dt;
   if (S.rattle <= 0) { sound.clack(0.2 + Math.random() * 0.25); S.rattle = 0.1 + Math.random() * 0.14; }
 }
