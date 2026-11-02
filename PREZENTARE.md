@@ -1,7 +1,7 @@
 ---
 title: "Camera Arcade AR"
 subtitle: "Jocuri de masă în realitate augmentată, cu elemente de inteligență ambientală"
-author: "Denis Paval"
+author: "Denis Pavăl Constantin"
 date: "Noiembrie 2026"
 lang: ro
 ---
