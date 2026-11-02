@@ -19,59 +19,35 @@ lang: ro
 
 # 1. Despre aplicație
 
-Camera Arcade AR este o aplicație web în care jocuri de masă cunoscute apar, prin camera telefonului, pe masa reală. Nu trebuie instalat nimic: se deschide adresa [camera-arcade-ar.vercel.app](https://camera-arcade-ar.vercel.app) și se pornește camera.
+Camera Arcade AR este o aplicație web cu jocuri de masă care apar, prin camera telefonului, direct pe masa din fața ta. Nu trebuie instalat nimic. Deschizi [camera-arcade-ar.vercel.app](https://camera-arcade-ar.vercel.app) în browser, dai voie la cameră și alegi un joc.
 
-Am implementat cinci jocuri:
+Am făcut cinci jocuri. La **zaruri**, zarurile îți apar în palmă: strângi pumnul, le agiți și deschizi mâna ca să le arunci pe masă. Am adăugat și o variantă „pe bani”, în care aplicația recunoaște bancnota pusă în fața camerei. E doar un experiment, nu se fac plăți reale. La **Piatră–Hârtie–Foarfecă**, gestul e recunoscut din cameră și deasupra mâinii apare simbolul ales. Mai sunt **Nu te supăra, frate**, cu tabla pe masă și pionii mutați cu degetul sau „ciupiți” cu mâna, **Jenga**, unde scoți piesele din turn cu degetul mare și arătătorul, și **X și 0**, unde ții degetul o clipă pe căsuța aleasă.
 
-- **Zaruri**: zarurile apar în palmă, le agiți cu pumnul strâns și le arunci deschizând mâna. Există și o variantă „pe bani”, în care aplicația recunoaște bancnota pusă în fața camerei (doar ca experiment, fără plăți reale).
-- **Piatră–Hârtie–Foarfecă**: gestul este recunoscut din cameră, iar deasupra mâinii apare simbolul 3D.
-- **Nu te supăra, frate**: tabla 3D stă pe masă, pionii se mută cu degetul sau „ciupiți” cu mâna.
-- **Jenga**: prinzi o piesă cu degetul mare și arătătorul, o scoți încet și o pui sus pe turn.
-- **X și 0**: pui degetul pe o căsuță și îl ții o clipă.
-
-Se poate juca singur, cu calculatorul, sau cu prietenii, prin intermediul unui cod de cameră de 4 litere.
+Se poate juca singur, contra calculatorului, sau cu prietenii. Gazda primește un cod de 4 litere, iar ceilalți intră cu el de pe telefoanele lor.
 
 # 2. Realitate augmentată și inteligență ambientală
 
-**Realitatea augmentată (AR)** adaugă obiecte virtuale peste imaginea lumii reale. După Azuma (1997), un sistem AR trebuie să combine realul cu virtualul, să răspundă în timp real și să fixeze obiectele virtuale în spațiul 3D. Spre deosebire de realitatea virtuală, utilizatorul vede în continuare lumea reală.
+Realitatea augmentată (AR) înseamnă să adaugi obiecte virtuale peste imaginea lumii reale. Definiția cea mai citată îi aparține lui Azuma (1997): un sistem AR combină realul cu virtualul, răspunde în timp real și ține obiectele virtuale fixate în spațiul 3D. Diferența față de realitatea virtuală e că utilizatorul nu pierde contactul cu lumea reală, o vede în continuare.
 
-În aplicația mea, imaginea camerei este fundalul, iar peste ea desenez zarurile, tabla sau turnul. Telefonul își calculează la fiecare cadru poziția față de masă (SLAM), așa că jocul rămâne pe masă chiar dacă mă mișc în jurul ei. Mâna reală este desenată în fața obiectelor virtuale, ca să pară că le ține. Jocul poate fi pus oriunde pe masă sau pe un marker printat, ca toți jucătorii să-l vadă în același loc.
+La mine, fundalul e chiar imaginea camerei, iar peste ea desenez zarurile, tabla sau turnul. Ca jocul să stea pe masă, telefonul își calculează la fiecare cadru poziția față de ea (tehnica se numește SLAM). Așa pot să mă mișc în jurul mesei, iar tabla rămâne unde am pus-o. Am vrut ca mâna să pară că ține obiectele virtuale, așa că o decupez din imagine și o desenez peste ele. Jocul se poate pune oriunde pe masă sau pe un marker printat. Varianta cu marker e utilă când toți jucătorii sunt în aceeași cameră și trebuie să vadă tabla în același loc.
 
-**Inteligența ambientală (AmI)** se referă la medii care simt prezența oamenilor și reacționează la ei, fără comenzi explicite (Weiser, 1991; ISTAG, 2001). Un astfel de sistem este conștient de context, se adaptează și anticipează ce vrea utilizatorul.
-
-Aplicația mea nu este o „casă inteligentă”, dar folosește aceste idei:
-
-- **percepe mediul**: găsește masa, mâinile (21 de puncte pe fiecare mână), gesturile și bancnotele;
-- **anticipează**: runda de Piatră–Hârtie–Foarfecă pornește singură când toți au mâna în cadru, jocul se așază singur dacă ții telefonul nemișcat, iar piesa de Jenga spre care arăți se colorează înainte s-o prinzi;
-- **se adaptează**: mărimea jocului se potrivește după distanța până la masă, iar când mâna intră în cadru tabla nu mai „sare”;
-- **interacțiune naturală**: joci cu mâinile, ca la o masă adevărată, nu cu butoane;
-- **intimitate**: toată recunoașterea rulează pe telefon, iar imaginile camerei nu sunt trimise nicăieri.
+Inteligența ambientală (AmI) pornește de la ideea lui Weiser (1991) că tehnologia ar trebui să „dispară” în fundal. Un mediu inteligent simte prezența oamenilor și reacționează fără să primească comenzi explicite (ISTAG, 2001). Aplicația mea nu e o casă inteligentă, dar am încercat să folosesc câteva dintre aceste idei. Telefonul recunoaște masa, mâinile, gesturile și bancnotele. Mai multe lucruri se întâmplă singure: runda de Piatră–Hârtie–Foarfecă pornește când toți jucătorii au mâna în cadru, jocul se așază pe masă dacă ții telefonul nemișcat câteva secunde, iar la Jenga piesa spre care duci degetele se colorează înainte s-o prinzi. Mărimea jocului se adaptează după distanța până la masă. Toată recunoașterea rulează pe telefon, deci imaginile din cameră nu pleacă nicăieri.
 
 # 3. Cum am gândit aplicația
 
-Am pornit de la ideea ca aplicația să meargă pe orice telefon, inclusiv pe iPhone, fără instalare. De aceea am ales o aplicație web, nu una nativă.
+Primul lucru pe care l-am vrut a fost ca aplicația să meargă pe orice telefon, inclusiv pe iPhone, fără să instalezi ceva. De aici a venit alegerea unei aplicații web.
 
-Am separat regulile jocurilor de partea vizuală. Când un jucător face o mutare, trimite o acțiune, iar telefonul gazdei verifică regulile și trimite starea nouă tuturor. Așa toți văd aceeași partidă, chiar dacă fiecare privește masa din alt unghi. Regulile pot fi astfel testate automat, fără telefon.
+Apoi am despărțit regulile jocurilor de ce se vede pe ecran. Când cineva face o mutare, trimite o acțiune, iar telefonul gazdei verifică dacă e permisă și trimite starea nouă tuturor. Așa toți văd aceeași partidă, chiar dacă fiecare se uită la masă din alt unghi. Un alt avantaj e că regulile se pot testa automat, fără telefon.
 
-Câteva decizii pe care le-am luat pe parcurs:
+Pe parcurs au apărut probleme care m-au obligat să schimb abordarea. La zaruri, rezultatul trebuia să fie același pe toate telefoanele, dar voiam și o cădere realistă. Am ajuns la o variantă în care fizica simulează aruncarea, iar valoarea e stabilită dinainte. La Jenga am încercat întâi să las fizica să decidă dacă turnul cade, dar turnul de 54 de piese cădea singur, fără să-l atingă nimeni. Acum verific geometric dacă piesele de sus mai au sprijin, iar fizica o folosesc doar pentru animația prăbușirii. Bancnotele am încercat la început să le recunosc după culoare, dar a ieșit corect doar o poză din zece, așa că am trecut la o rețea neuronală.
 
-- **Zarurile** cad cu fizică reală, dar rezultatul este decis înainte, ca să fie la fel pe toate telefoanele.
-- **La Jenga** nu las fizica să decidă dacă turnul cade, pentru că turnul de 54 de piese cădea singur. Verific geometric dacă piesele de sus au sprijin, iar fizica o folosesc doar pentru animația prăbușirii.
-- **Masa** o găsesc ca planul orizontal pe care se adună cele mai multe puncte 3D, similar aplicației Măsurare de pe iPhone.
-- **Bancnotele** le recunosc cu o rețea neuronală. Prima variantă, după culoare, a recunoscut doar 1 din 10 poze reale.
-
-Am lucrat iterativ: am publicat fiecare versiune, am testat-o pe telefon și am corectat ce nu mergea, de exemplu tabla prea mică, mâna confundată cu masa sau piesele greu de prins.
+Am lucrat pas cu pas: publicam o versiune, o încercam pe telefon și corectam ce nu mergea. Tabla prea mică lângă mână, mâna confundată cu masa sau piesele de Jenga greu de prins au fost corectate așa.
 
 # 4. Mediul de dezvoltare
 
-Aplicația este scrisă în **JavaScript, HTML și CSS**, fără etapă de compilare. Fișierele sunt încărcate direct de browser.
+Aplicația e scrisă în JavaScript, HTML și CSS și nu are etapă de compilare, browserul încarcă fișierele direct. Pentru versiuni am folosit Git și GitHub, iar pentru publicare Vercel. La fiecare `git push`, site-ul se actualizează automat pe HTTPS, lucru necesar pentru că browserul nu dă acces la cameră pe o pagină fără HTTPS.
 
-- **Git și GitHub** pentru versiuni;
-- **Vercel** pentru publicare: la fiecare `git push`, aplicația se actualizează automat pe HTTPS (camera telefonului funcționează doar pe HTTPS);
-- **Node.js** pentru testele automate (61 de teste pentru reguli, gesturi, bancnote și găsirea mesei);
-- **Playwright** pentru testare în browser, cu un „telefon simulat” care filmează o masă generată pe calculator;
-- **Claude Code și Codex**, asistenți AI pentru scrierea codului;
-- testare pe **iPhone (Safari)** și **Android (Chrome)**.
+Pentru testare am scris 61 de teste automate în Node.js, care verifică regulile jocurilor, gesturile, bancnotele și găsirea mesei. Partea de AR am testat-o cu Playwright, într-un „telefon simulat” care filmează o masă generată pe calculator, și bineînțeles pe telefoane reale: iPhone cu Safari și Android cu Chrome.
 
 # 5. Librării folosite
 
@@ -85,30 +61,17 @@ Aplicația este scrisă în **JavaScript, HTML și CSS**, fără etapă de compi
 | js-aruco2 | recunoașterea markerului printat |
 | PeerJS | conexiunea directă între telefoane (WebRTC) |
 
-Toate sunt încărcate din CDN, cu versiunea fixată.
+Toate sunt încărcate din CDN, cu versiunea fixată, ca o actualizare a lor să nu strice aplicația.
 
 # 6. Avantaje și dezavantaje
 
-**Avantaje:**
+Cel mai mare avantaj e că aplicația merge din browser, fără instalare, atât pe iPhone, cât și pe Android. Jocul se controlează cu mâinile, ceea ce îl face mai apropiat de un joc de masă adevărat. Pentru multiplayer nu e nevoie de server propriu sau de conturi, iar imaginile camerei rămân pe telefon. Codul e împărțit clar, deci un joc nou se adaugă relativ ușor.
 
-- merge din browser, fără instalare, pe iPhone și Android, iar interacțiunea se face cu mâinile;
-- multiplayerul nu are nevoie de server propriu sau de conturi, iar imaginile camerei rămân pe telefon;
-- codul este împărțit clar, deci se pot adăuga ușor jocuri noi.
-
-**Dezavantaje:**
-
-- urmărirea din browser este mai puțin precisă decât într-o aplicație nativă (Safari nu are acces la ARKit), deci tabla poate aluneca puțin pe o masă albă sau la mișcări bruște;
-- recunoașterea mâinii depinde de lumină, iar prinsul pieselor de Jenga cu mâna e încă dificil (cu degetul pe ecran merge mai sigur);
-- telefonul consumă mult și se încălzește, iar testarea s-a făcut pe puține modele de telefoane;
-- multiplayerul depinde de gazdă și de un server public PeerJS, iar gazda e considerată de încredere, deci trișatul nu e exclus complet.
+Există și limite. Urmărirea mesei din browser e mai puțin precisă decât într-o aplicație nativă, pentru că Safari nu dă acces la ARKit. Pe o masă albă sau la mișcări bruște, tabla poate aluneca puțin. Recunoașterea mâinii depinde de lumină, iar prinsul pieselor de Jenga cu mâna e încă dificil, cu degetul pe ecran merge mai sigur. Telefonul consumă destul de mult și se încălzește. Multiplayerul depinde de gazdă și de un server public PeerJS, iar gazda e considerată de încredere, deci trișatul nu e exclus complet. Nu în ultimul rând, am putut testa doar pe câteva modele de telefoane.
 
 # 7. Dezvoltări ulterioare
 
-- o versiune nativă sau acces la ARKit pe iPhone, pentru o urmărire mai precisă;
-- tabla în același loc pentru toți jucătorii, fără marker printat;
-- comenzi vocale și recunoașterea jucătorilor;
-- jocuri noi (dame, șah, table) și un tutorial la prima pornire;
-- reconectare automată dacă gazda iese din joc și mod offline.
+Cel mai mult m-ar interesa o versiune nativă sau o soluție care să dea acces la ARKit pe iPhone, pentru o urmărire mai precisă. Ar fi util și ca toți jucătorii să vadă tabla în același loc fără marker printat. Ca idei mai apropiate de inteligența ambientală, m-am gândit la comenzi vocale și la recunoașterea jucătorilor. Pe lângă acestea, aș adăuga jocuri noi (dame, șah, table), un tutorial la prima pornire, reconectare automată când iese gazda și un mod offline.
 
 # Bibliografie
 
