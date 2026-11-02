@@ -13,7 +13,7 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 
 ### Mâini virtuale animate
 
-La aruncările tactile și ale calculatorului, o mână 3D ține zarurile, le agită și le eliberează. Când arunci cu mâna reală urmărită de cameră, zarurile pleacă direct din ea. La piatră–hârtie–foarfecă, avatarurile arată gesturile recunoscute, adversarul bate ritmul cu pumnul, iar la rezultat mâinile se apropie și reacționează. Modelul comun este în `virtual-hand.js`, fără biblioteci suplimentare.
+La aruncările tactile și ale calculatorului, o mână 3D ține zarurile, le agită și le eliberează. Când arunci cu mâna reală urmărită de cameră, zarurile pleacă direct din ea. La piatră–hârtie–foarfecă, avatarurile arată gesturile recunoscute, cu o piatră, o foaie sau o foarfecă 3D deasupra fiecărei mâini. Adversarul bate ritmul cu pumnul și își arată simbolul doar la dezvăluirea alegerii; la rezultat mâinile se apropie și reacționează. Modelul comun este în `virtual-hand.js`, iar simbolurile în `rps-symbols.js`, fără biblioteci suplimentare.
 
 ### Pași
 

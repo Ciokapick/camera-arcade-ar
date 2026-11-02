@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { makeHand, CAMERA_FOV } from './ar.js';
 import { createVirtualHand } from './virtual-hand.js';
+import { createGestureSymbols } from './rps-symbols.js';
 
 const COLORS = { 'Piatră': 0x9aa0a8, 'Hârtie': 0xf4f1e8, 'Foarfecă': 0xd8dde3 };
 
@@ -43,10 +44,14 @@ export function createRpsScene(container, video) {
     return slots.get(key);
   }
   function setModel(s, gesture) {
+    s.symbols?.show(s.thinking ? null : gesture);
     if (s.gesture === gesture) return;
     if (!s.hand && gesture) {
       s.hand = createVirtualHand();
       s.model = s.hand.group;
+      s.symbols = createGestureSymbols();
+      s.model.add(s.symbols.group);
+      s.symbols.show(s.thinking ? null : gesture);
       s.model.scale.setScalar(0.55);
       s.root.add(s.model);
     }
@@ -85,7 +90,7 @@ export function createRpsScene(container, video) {
       s.model.rotation.z = THREE.MathUtils.lerp(s.model.rotation.z, tilt, Math.min(1, dt * 10));
       s.model.rotation.x = s.thinking ? -0.2 : 0;
     }
-    // adversarul se „gândește”: își tot schimbă gestul
+    // Pumnul bate ritmul fără să dezvăluie simbolul adversarului.
     if (thinking) for (const [key, s] of slots) if (key.startsWith('opp') && s.thinking) setModel(s, 'Piatră');
     if (clash) {
       clash.t += dt;
@@ -133,12 +138,13 @@ export function createRpsScene(container, video) {
         const target = p.clone().add(new THREE.Vector3(0, h.depth * 0.12, 0));
         const halfH = Math.tan(camera.fov * Math.PI / 360) * Math.abs(target.z);
         target.x = THREE.MathUtils.clamp(target.x, -halfH * camera.aspect * 0.7, halfH * camera.aspect * 0.7);
-        target.y = THREE.MathUtils.clamp(target.y, -halfH * 0.5, halfH * 0.35);
+        const scale = Math.min(0.55, h.depth * 0.9, halfH * 3);
+        target.y = THREE.MathUtils.clamp(target.y, -halfH * 0.5, halfH * 0.7 - scale * 0.17);
         if (!s.root.visible) s.root.position.copy(target);
         s.target.copy(target);
         s.home = target.clone();
         setModel(s, hand.gesture);
-        s.model.scale.setScalar(Math.min(0.55, h.depth * 0.9));
+        s.model.scale.setScalar(scale);
         s.root.visible = !s.broken;
       }
     },
@@ -152,11 +158,12 @@ export function createRpsScene(container, video) {
         // sus, deasupra mâinilor: unul singur în dreapta, mai mulți pe un rând
         const z = -0.45, half = Math.tan(camera.fov * Math.PI / 360) * -z, halfW = half * camera.aspect;
         const x = n === 1 ? halfW * 0.55 : (i / (n - 1) - 0.5) * halfW * 1.2;
-        s.target.set(x, half * 0.5, z);
+        s.target.set(x, half * 0.15, z);
         s.home = s.target.clone();
         if (!s.root.visible) s.root.position.copy(s.target);
         s.thinking = g === '?';
-        if (g !== '?') setModel(s, g);
+        setModel(s, s.thinking ? 'Piatră' : g);
+        s.model?.scale.setScalar(Math.min(0.55, half * 3));
         s.root.visible = true;
       });
     },
@@ -183,7 +190,7 @@ export function createRpsScene(container, video) {
     dispose() {
       cancelAnimationFrame(raf);
       removeEventListener('resize', resize);
-      for (const s of slots.values()) s.hand?.dispose();
+      for (const s of slots.values()) { s.hand?.dispose(); s.symbols?.dispose(); }
       for (const p of pieces) { p.m.geometry.dispose(); p.m.material.dispose(); }
       renderer.domElement.remove();
       renderer.dispose();

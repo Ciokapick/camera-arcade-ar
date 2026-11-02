@@ -24,11 +24,39 @@ const hook = registerHooks({ resolve(specifier, context, next) {
   return next(specifier, context);
 } });
 globalThis.addEventListener = () => {};
-globalThis.document = { createElement: () => ({ getContext: () => ({ createRadialGradient: () => ({ addColorStop() {} }), fillRect() {}, beginPath() {}, arc() {}, fill() {} }) }) };
+globalThis.document = { createElement: () => ({ getContext: () => ({ createRadialGradient: () => ({ addColorStop() {} }), fillRect() {}, beginPath() {}, arc() {}, fill() {}, moveTo() {}, lineTo() {}, stroke() {} }) }) };
 const THREE = await import('three');
 const { createVirtualHand } = await import('../virtual-hand.js');
+const { createGestureSymbols } = await import('../rps-symbols.js');
 const { createDice, topValue } = await import('../dice.js');
 hook.deregister();
+
+test('PHF: simboluri distincte deasupra mâinii, ascunse la numărătoare și refolosite', () => {
+  const symbols = createGestureSymbols();
+  assert.ok(symbols.group.position.y > 0.1);
+  const resources = new Set(), disposed = new Set();
+  for (const gesture of ['Piatră', 'Hârtie', 'Foarfecă']) {
+    symbols.show(gesture);
+    const visible = symbols.group.children.filter(x => x.visible);
+    assert.equal(visible.length, 1);
+    visible[0].traverse(o => {
+      if (!o.isMesh) return;
+      assert.ok([...o.geometry.attributes.position.array].every(Number.isFinite));
+      resources.add(o.geometry); resources.add(o.material);
+      if (o.material.map) resources.add(o.material.map);
+    });
+  }
+  for (const gesture of [null, '?']) {
+    symbols.show(gesture);
+    assert.ok(symbols.group.children.every(x => !x.visible));
+  }
+  symbols.show('Piatră');
+  assert.equal(symbols.group.children.length, 3, 'nu reconstruiește modelele între runde');
+  assert.equal(symbols.group.children[0].visible, true, 'aceeași alegere reapare după numărătoare');
+  for (const resource of resources) resource.addEventListener('dispose', () => disposed.add(resource));
+  symbols.dispose();
+  assert.equal(disposed.size, resources.size, 'eliberează inclusiv textura hârtiei');
+});
 
 test('mâna: pumn, palmă și foarfecă au degete distincte și tranziții finite', () => {
   const hand = createVirtualHand();
