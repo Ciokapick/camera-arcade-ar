@@ -1,4 +1,4 @@
-// Mâini articulate deasupra gesturilor reale; adversarii bat ritmul cu pumnul și dezvăluie gestul la rezultat.
+// Simboluri deasupra mâinilor reale; adversarii au mâini articulate și dezvăluie gestul la rezultat.
 import * as THREE from 'three';
 import { makeHand, CAMERA_FOV } from './ar.js';
 import { createVirtualHand } from './virtual-hand.js';
@@ -39,16 +39,16 @@ export function createRpsScene(container, video) {
       const root = new THREE.Group();
       root.visible = false;
       scene.add(root);
-      slots.set(key, { root, model: null, gesture: null, target: new THREE.Vector3(), pop: 0 });
+      slots.set(key, { root, opponent: key.startsWith('opp'), model: null, gesture: null, target: new THREE.Vector3(), pop: 0 });
     }
     return slots.get(key);
   }
   function setModel(s, gesture) {
     s.symbols?.show(s.thinking ? null : gesture);
     if (s.gesture === gesture) return;
-    if (!s.hand && gesture) {
-      s.hand = createVirtualHand();
-      s.model = s.hand.group;
+    if (!s.model && gesture) {
+      if (s.opponent) s.hand = createVirtualHand();
+      s.model = s.hand?.group ?? new THREE.Group();
       s.symbols = createGestureSymbols();
       s.model.add(s.symbols.group);
       s.symbols.show(s.thinking ? null : gesture);
@@ -56,7 +56,8 @@ export function createRpsScene(container, video) {
       s.root.add(s.model);
     }
     s.gesture = gesture;
-    if (s.hand) { s.hand.pose(gesture || 'Piatră'); s.model.visible = !!gesture; }
+    s.hand?.pose(gesture || 'Piatră');
+    if (s.model) s.model.visible = !!gesture;
   }
 
   const pieces = [];
@@ -125,7 +126,7 @@ export function createRpsScene(container, video) {
   const toDisplay = landmarks => landmarks.map(p => ({ x: (p.x * layout.vw * layout.cover + layout.offX) / layout.W, y: (p.y * layout.vh * layout.cover + layout.offY) / layout.H, z: p.z }));
 
   return {
-    /** Mâinile din cameră primesc fiecare un avatar al gestului recunoscut. */
+    /** Mâinile reale primesc doar simbolul gestului recunoscut. */
     setHands(hands) {
       if (clash) return;
       if (layout.vw !== video.videoWidth && video.videoWidth) resize();

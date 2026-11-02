@@ -4,7 +4,7 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 
 - **Joc de zaruri**: două zaruri 3D cu fizică reală; pe rând, fiecare aruncă și vede imediat câte puncte a făcut; cine are mai multe ia runda (la egalitate aruncă din nou doar cei la egalitate). În AR zarurile îți apar în palmă: strângi pumnul, le agiți și deschizi mâna ca să le arunci pe masă. Pe ecran: dai cu degetul peste masă sau scuturi telefonul.
   - **Pe bani** (bonus, îl pornește gazda): fiecare își pune bancnota în fața camerei înainte să arunce; aplicația recunoaște bancnota (1–500 lei), câștigătorul rundei ia potul și se ține soldul fiecăruia.
-- **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din camera din spate (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru, cu numărătoare 3–2–1 (bip și vibrație), iar gestul se arată pe „Acum!”. Singur pe telefon: o mână = tu contra calculatorului, două mâini = doi jucători. Mâini 3D articulate reproduc gesturile; adversarul bate ritmul cu pumnul, apoi dezvăluie alegerea. La rezultat mâinile se apropie și cea învinsă se înclină, cu particule de impact.
+- **Piatră–Hârtie–Foarfecă**: gestul e recunoscut din camera din spate (MediaPipe Hand Landmarker). Runda pornește singură când toți jucătorii au mâna în cadru, cu numărătoare 3–2–1 (bip și vibrație), iar gestul se arată pe „Acum!”. Singur pe telefon: o mână = tu contra calculatorului, două mâini = doi jucători. Mâinile tale rămân cele reale din cameră, cu simbolul 3D al gestului deasupra. Adversarul are o mână 3D articulată, bate ritmul cu pumnul, apoi dezvăluie alegerea și simbolul. La rezultat simbolurile și mâna adversarului se apropie și reacționează, cu particule de impact.
 - **Nu te supăra, frate**: 2–4 jucători, fiecare cu culoarea aleasă, tabla 3D pe masă. Zarul îl arunci din palmă; căsuțele unde poți muta sunt marcate, iar pionul îl iei tu (cu degetul pe ecran sau ciupit cu mâna) și îl pui pe căsuța marcată — lăsat în altă parte, se întoarce.
 - **Jenga**: turn de 54 de piese pe masă; pe rând prinzi o piesă (cu degetul pe ecran sau, în AR, între degetul mare și arătător), o scoți și o duci tu sus pe turn; cine dărâmă turnul pierde. Dacă tragi prea repede, turnul se clatină și riscul crește. Stabilitatea se calculează geometric (centrul de greutate față de zona de sprijin a fiecărui nivel) plus un risc care crește cu fiecare nivel șubrezit; prăbușirea e simulată fizic.
 - **X și 0**: clasic, 3×3, tabla pe masă. În AR pui degetul real pe o căsuță și îl ții o clipă.
@@ -13,7 +13,7 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 
 ### Mâini virtuale animate
 
-La aruncările tactile și ale calculatorului, o mână 3D ține zarurile, le agită și le eliberează. Când arunci cu mâna reală urmărită de cameră, zarurile pleacă direct din ea. La piatră–hârtie–foarfecă, avatarurile arată gesturile recunoscute, cu o piatră, o foaie sau o foarfecă 3D deasupra fiecărei mâini. Adversarul bate ritmul cu pumnul și își arată simbolul doar la dezvăluirea alegerii; la rezultat mâinile se apropie și reacționează. Modelul comun este în `virtual-hand.js`, iar simbolurile în `rps-symbols.js`, fără biblioteci suplimentare.
+La aruncările tactile și ale calculatorului, o mână 3D ține zarurile, le agită și le eliberează. Când arunci cu mâna reală urmărită de cameră, zarurile pleacă direct din ea. La piatră–hârtie–foarfecă, mâinile reale din cameră au doar o piatră, o foaie sau o foarfecă 3D deasupra, fără avatar duplicat. Adversarul păstrează mâna 3D articulată și simbolul. Adversarul bate ritmul cu pumnul și își arată simbolul doar la dezvăluirea alegerii; la rezultat simbolurile și mâna adversarului se apropie și reacționează. Modelul comun este în `virtual-hand.js`, iar simbolurile în `rps-symbols.js`, fără biblioteci suplimentare.
 
 ### Pași
 
@@ -41,7 +41,7 @@ Explicat pe larg, pas cu pas: [DOCUMENTATIE.md](DOCUMENTATIE.md).
 | `hands.js` | recunoașterea mâinilor și a gestului |
 | `surface.js` | masa din punctele 3D ale urmăririi (înălțimea unde se adună cele mai multe), ca aplicația Măsurare |
 | `ar.js` → `makeHand` | mâna reală în scena AR: raze 3D prin degete, distanța estimată din mărimea palmei, ciupit |
-| `rps-ar.js`, `virtual-hand.js` | avatarurile mâinilor, gesturi articulate și reacții animate |
+| `rps-ar.js`, `virtual-hand.js` | simboluri peste mâinile reale, mâinile articulate ale adversarilor și reacții animate |
 | `sound.js` | sunete sintetizate, vibrație, confetti |
 | `banknotes.js`, `banknote-refs.json` | recunoașterea bancnotelor: rețea neuronală (MediaPipe Image Embedder) + cel mai apropiat vecin |
 | `app.js`, `index.html` | interfața (Inter + iconițe Phosphor prin Iconify) |

@@ -29,6 +29,12 @@ const THREE = await import('three');
 const { createVirtualHand } = await import('../virtual-hand.js');
 const { createGestureSymbols } = await import('../rps-symbols.js');
 const { createDice, topValue } = await import('../dice.js');
+// Renderer fără WebGL; restul scenei folosește aceleași modele și repere ca aplicația.
+globalThis.location = { search: '' };
+const sceneSource = (await fs.readFile(new URL('../rps-ar.js', import.meta.url), 'utf8'))
+  .replace('new THREE.WebGLRenderer(', 'new globalThis.RpsTestRenderer(')
+  .replaceAll("from './", `from '${new URL('../', import.meta.url).href}`);
+const { createRpsScene } = await import(`data:text/javascript;base64,${Buffer.from(sceneSource).toString('base64')}`);
 hook.deregister();
 
 test('PHF: simboluri distincte deasupra mâinii, ascunse la numărătoare și refolosite', () => {
@@ -91,4 +97,54 @@ test('zaruri: mână virtuală repetabilă, rezultat păstrat, ascundere complet
   dice.hide(); dice.update(0.1);
   assert.ok(dice.meshes.every(m=>!m.visible));
   dice.dispose();
+});
+
+
+test('PHF: mâinile reale au doar simboluri; adversarul păstrează mâna și ascunde alegerea', () => {
+  let scene, frame;
+  const resources = new Set(), disposed = new Set();
+  globalThis.devicePixelRatio = 1;
+  globalThis.removeEventListener = () => {};
+  globalThis.requestAnimationFrame = callback => { frame = callback; return 1; };
+  globalThis.cancelAnimationFrame = () => {};
+  globalThis.RpsTestRenderer = class {
+    domElement = { remove() {} };
+    setPixelRatio() {} setSize() {} dispose() {}
+    render(value) { scene = value; }
+  };
+  const rps = createRpsScene({ clientWidth: 640, clientHeight: 480, append() {} }, { videoWidth: 640, videoHeight: 480 });
+  try {
+    const landmarks = Array.from({ length: 21 }, (_, i) => ({ x: 0.4 + (i % 5) * 0.02, y: 0.6 - i * 0.01, z: 0 }));
+    rps.setHands(['Piatră', 'Hârtie'].map(gesture => ({ gesture, landmarks })));
+    rps.setOpponents(['?']);
+    frame(16);
+    const [human0, human1, opponent] = scene.children.filter(x => x.isGroup);
+    for (const human of [human0, human1]) {
+      assert.equal(human.children[0].children.length, 1, 'doar grupul de simboluri, fără geometria unei mâini');
+      assert.equal(human.children[0].children[0].children.filter(x => x.visible).length, 1);
+      assert.ok([...human.position].every(Number.isFinite));
+    }
+    const bot = opponent.children[0], symbols = bot.children.at(-1);
+    assert.ok(bot.children.length > 1, 'adversarul păstrează geometria mâinii articulate');
+    assert.ok(symbols.children.every(x => !x.visible), 'numărătoarea nu dezvăluie simbolul');
+    rps.setOpponents(['Piatră']);
+    assert.equal(symbols.children.filter(x => x.visible).length, 1, 'aceeași piatră reapare la rezultat');
+    rps.clash({ hand0: 'win', hand1: 'tie', opp0: 'lose' });
+    for (let i = 2; i < 65; i++) frame(i * 50);
+    assert.ok(bot.rotation.z < 0, 'mâna învinsă reacționează la impact');
+    rps.clear();
+    assert.ok([human0, human1, opponent].every(x => !x.visible));
+    rps.setHands([{ gesture: 'Foarfecă', landmarks }]);
+    assert.ok(human0.visible && !human1.visible, 'simbolurile se refolosesc și dispar când mâna lipsește');
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      resources.add(o.geometry); resources.add(o.material);
+      if (o.material.map) resources.add(o.material.map);
+    });
+    for (const resource of resources) resource.addEventListener('dispose', () => disposed.add(resource));
+  } finally {
+    rps.dispose();
+    delete globalThis.RpsTestRenderer;
+  }
+  assert.equal(disposed.size, resources.size, 'eliberează atât simbolurile umane, cât și mâna adversarului');
 });
