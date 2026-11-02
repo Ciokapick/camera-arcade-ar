@@ -91,29 +91,24 @@ Toate sunt încărcate din CDN, cu versiunea fixată.
 
 **Avantaje:**
 
-- merge din browser, fără instalare, pe iPhone și Android;
-- interacțiunea se face cu mâinile;
-- multiplayerul nu are nevoie de server propriu sau de conturi;
-- imaginile camerei rămân pe telefon;
+- merge din browser, fără instalare, pe iPhone și Android, iar interacțiunea se face cu mâinile;
+- multiplayerul nu are nevoie de server propriu sau de conturi, iar imaginile camerei rămân pe telefon;
 - codul este împărțit clar, deci se pot adăuga ușor jocuri noi.
 
 **Dezavantaje:**
 
-- urmărirea din browser este mai puțin precisă decât într-o aplicație nativă (Safari nu are acces la ARKit), deci tabla poate aluneca puțin, mai ales pe o masă albă sau la mișcări bruște;
-- recunoașterea mâinii depinde de lumină, iar prinsul pieselor de Jenga cu mâna este încă dificil; cu degetul pe ecran merge mai sigur;
-- telefonul consumă mult (cameră, urmărire, rețea neuronală) și se încălzește;
-- multiplayerul depinde de gazdă și de un server public PeerJS; gazda este considerată de încredere, deci aplicația nu e complet protejată împotriva trișării;
-- nu am putut testa pe multe modele de telefoane.
+- urmărirea din browser este mai puțin precisă decât într-o aplicație nativă (Safari nu are acces la ARKit), deci tabla poate aluneca puțin pe o masă albă sau la mișcări bruște;
+- recunoașterea mâinii depinde de lumină, iar prinsul pieselor de Jenga cu mâna e încă dificil (cu degetul pe ecran merge mai sigur);
+- telefonul consumă mult și se încălzește, iar testarea s-a făcut pe puține modele de telefoane;
+- multiplayerul depinde de gazdă și de un server public PeerJS, iar gazda e considerată de încredere, deci trișatul nu e exclus complet.
 
 # 7. Dezvoltări ulterioare
 
 - o versiune nativă sau acces la ARKit pe iPhone, pentru o urmărire mai precisă;
 - tabla în același loc pentru toți jucătorii, fără marker printat;
 - comenzi vocale și recunoașterea jucătorilor;
-- jocuri noi (dame, șah, table);
-- un tutorial la prima pornire;
-- reconectare automată dacă gazda iese din joc;
-- mod offline.
+- jocuri noi (dame, șah, table) și un tutorial la prima pornire;
+- reconectare automată dacă gazda iese din joc și mod offline.
 
 # Bibliografie
 
