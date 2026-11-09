@@ -1,10 +1,12 @@
 ---
 title: "Camera Arcade AR"
-author: "Denis Pavăl Constantin"
+author: "Denis Pavăl Constantin · https://github.com/Ciokapick/camera-arcade-ar"
 lang: ro
 ---
 
-**Ce este.** O aplicație web cu cinci jocuri de masă (zaruri, Piatră–Hârtie–Foarfecă, Nu te supăra frate, Jenga, X și 0) care apar prin camera telefonului pe masa reală. Merge din browser, fără instalare: [camera-arcade-ar.vercel.app](https://camera-arcade-ar.vercel.app). Codul e pe GitHub, în repo-ul [Ciokapick/camera-arcade-ar](https://github.com/Ciokapick/camera-arcade-ar). Se joacă singur, contra calculatorului.
+**Ce este.** O aplicație web cu cinci jocuri de masă (zaruri, Piatră–Hârtie–Foarfecă, Nu te supăra frate, Jenga, X și 0) care apar prin camera telefonului pe masa reală. Merge din browser, fără instalare: [camera-arcade-ar.vercel.app](https://camera-arcade-ar.vercel.app). Se joacă singur, contra calculatorului.
+
+**AR și inteligență ambientală.** Realitatea augmentată adaugă obiecte virtuale peste lumea reală, în timp real, iar inteligența ambientală înseamnă un mediu care observă utilizatorul și reacționează singur, fără comenzi explicite. În aplicație, jocurile apar pe masa reală, iar telefonul recunoaște mâna și gesturile și pornește singur anumite acțiuni.
 
 **Logica.** Regulile sunt separate de ce se vede pe ecran: jucătorul trimite o acțiune („am dat cu zarul”), regulile calculează starea nouă, iar scena 3D doar o afișează. Telefonul își calculează la fiecare cadru poziția față de masă (SLAM), așa că jocul rămâne pe loc când te miști. Masa e găsită ca planul orizontal pe care se adună cele mai multe puncte 3D. Mâna e recunoscută din cameră (21 de puncte pe mână) și e desenată peste obiectele virtuale. Zarurile cad cu fizică reală, dar valoarea e stabilită dinainte. La Jenga, căderea turnului e decisă geometric (au piesele de sus sprijin?), pentru că fizica făcea turnul să cadă singur.
 
