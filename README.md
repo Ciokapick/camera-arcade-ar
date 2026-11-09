@@ -13,7 +13,7 @@ Jocuri în realitate augmentată, direct în browser (iPhone, Android, laptop), 
 
 ### Mâini virtuale animate
 
-La aruncările tactile și ale calculatorului, o mână 3D ține zarurile, le agită și le eliberează. Când arunci cu mâna reală urmărită de cameră, zarurile pleacă direct din ea. La piatră–hârtie–foarfecă, mâinile reale din cameră au doar o piatră, o foaie sau o foarfecă 3D deasupra, fără avatar duplicat. Adversarul păstrează mâna 3D articulată și simbolul. Adversarul bate ritmul cu pumnul și își arată simbolul doar la dezvăluirea alegerii; la rezultat simbolurile și mâna adversarului se apropie și reacționează. Modelul comun este în `virtual-hand.js`, iar simbolurile în `rps-symbols.js`, fără biblioteci suplimentare.
+La aruncările tactile și ale calculatorului, o mână 3D ține zarurile, le agită și le eliberează. Când arunci cu mâna reală urmărită de cameră, zarurile pleacă direct din ea. La piatră–hârtie–foarfecă, mâinile reale din cameră au doar o piatră, o foaie sau o foarfecă 3D deasupra, fără avatar duplicat. Adversarul păstrează mâna 3D articulată și simbolul. Adversarul bate ritmul cu pumnul și își arată simbolul doar la dezvăluirea alegerii; la rezultat simbolurile și mâna adversarului se apropie și reacționează. Modelul comun este în `src/scenes/virtual-hand.js`, iar simbolurile în `src/scenes/rps-symbols.js`, fără biblioteci suplimentare.
 
 ### Pași
 
@@ -26,31 +26,40 @@ La aruncările tactile și ale calculatorului, o mână 3D ține zarurile, le ag
 
 ## Cum e făcut
 
+```
+src/rules/   regulile jocurilor (fără grafică, testate automat)
+src/ar/      camera, urmărirea mesei și recunoașterea mâinii
+src/scenes/  scenele 3D ale fiecărui joc
+src/ui/      interfața (app.js leagă totul), sunete
+src/extra/   multiplayer și bancnote (funcții în plus)
+tests/       teste automate · tools/ar-sim/ simulatorul de telefon
+```
+
 Explicat pe larg, pas cu pas: [DOCUMENTATIE.md](DOCUMENTATIE.md).
 
 | Fișier | Ce face |
 |---|---|
-| `ludo.js` | regulile „Nu te supăra, frate” |
-| `game.js` | starea camerei de joc (lobby, zaruri, PHF, Ludo, calculatorul) — reducer pur |
-| `net.js` | multiplayer fără server propriu: PeerJS (WebRTC); gazda ține starea și o trimite tuturor |
-| `dice.js` | zaruri cu fizică (cannon-es); valoarea e decisă de cel care aruncă, animația o respectă pe toate telefoanele |
-| `board.js` | tabla 3D, pionii animați pas cu pas |
-| `jenga.js`, `jenga-view.js` | regulile și stabilitatea turnului / turnul 3D, tragerea și prăbușirea |
-| `xo.js`, `xo-view.js` | regulile și calculatorul / tabla 3×3 |
-| `ar.js` | scena: pe masă cu 8th Wall (rezervă: AlvaAR SLAM + giroscop) / marker ArUco (js-aruco2) / WebXR (`?webxr`) |
-| `hands.js` | recunoașterea mâinilor și a gestului |
-| `surface.js` | masa din punctele 3D ale urmăririi (înălțimea unde se adună cele mai multe), ca aplicația Măsurare |
-| `ar.js` → `makeHand` | mâna reală în scena AR: raze 3D prin degete, distanța estimată din mărimea palmei, ciupit |
-| `rps-ar.js`, `virtual-hand.js` | simboluri peste mâinile reale, mâinile articulate ale adversarilor și reacții animate |
-| `sound.js` | sunete sintetizate, vibrație, confetti |
-| `banknotes.js`, `banknote-refs.json` | recunoașterea bancnotelor: rețea neuronală (MediaPipe Image Embedder) + cel mai apropiat vecin |
-| `app.js`, `index.html` | interfața (Inter + iconițe Phosphor prin Iconify) |
+| `src/rules/ludo.js` | regulile „Nu te supăra, frate” |
+| `src/rules/game.js` | starea camerei de joc (lobby, zaruri, PHF, Ludo, calculatorul) — reducer pur |
+| `src/extra/net.js` | multiplayer fără server propriu: PeerJS (WebRTC); gazda ține starea și o trimite tuturor |
+| `src/scenes/dice.js` | zaruri cu fizică (cannon-es); valoarea e decisă de cel care aruncă, animația o respectă pe toate telefoanele |
+| `src/scenes/board.js` | tabla 3D, pionii animați pas cu pas |
+| `src/rules/jenga.js`, `src/scenes/jenga-view.js` | regulile și stabilitatea turnului / turnul 3D, tragerea și prăbușirea |
+| `src/rules/xo.js`, `src/scenes/xo-view.js` | regulile și calculatorul / tabla 3×3 |
+| `src/ar/ar.js` | scena: pe masă cu 8th Wall (rezervă: AlvaAR SLAM + giroscop) / marker ArUco (js-aruco2) / WebXR (`?webxr`) |
+| `src/ar/hands.js` | recunoașterea mâinilor și a gestului |
+| `src/ar/surface.js` | masa din punctele 3D ale urmăririi (înălțimea unde se adună cele mai multe), ca aplicația Măsurare |
+| `src/ar/ar.js` → `makeHand` | mâna reală în scena AR: raze 3D prin degete, distanța estimată din mărimea palmei, ciupit |
+| `src/scenes/rps-ar.js`, `src/scenes/virtual-hand.js` | simboluri peste mâinile reale, mâinile articulate ale adversarilor și reacții animate |
+| `src/ui/sound.js` | sunete sintetizate, vibrație, confetti |
+| `src/extra/banknotes.js`, `src/extra/banknote-refs.json` | recunoașterea bancnotelor: rețea neuronală (MediaPipe Image Embedder) + cel mai apropiat vecin |
+| `src/ui/app.js`, `index.html` | interfața (Inter + iconițe Phosphor prin Iconify) |
 
 Biblioteci (din CDN): three.js, cannon-es, PeerJS, MediaPipe Tasks Vision, [8th Wall Engine](https://github.com/8thwall/engine) © Niantic Spatial (binar gratuit, [licență proprie](https://github.com/8thwall/engine/blob/main/LICENSE) — urmărirea mesei), [AlvaAR](https://github.com/alanross/AlvaAR) (GPL-3.0, rezervă), js-aruco2.
 
 ### Recunoașterea bancnotelor
 
-Imaginea din chenar trece printr-o rețea neuronală (MobileNet v3 din MediaPipe Image Embedder) care o transformă într-o „amprentă” de 1024 de numere; o comparăm (cosinus) cu amprentele bancnotelor cunoscute și alegem cea mai apropiată. Amprentele din `banknote-refs.json` sunt calculate din scanările bancnotelor românești de pe Wikimedia Commons (domeniu public), față și verso, câte 4 variante (normal, mai întunecat, întors, ușor mărit). În aplicație poți adăuga și amprentele bancnotelor tale („Învăț bancnota”).
+Imaginea din chenar trece printr-o rețea neuronală (MobileNet v3 din MediaPipe Image Embedder) care o transformă într-o „amprentă” de 1024 de numere; o comparăm (cosinus) cu amprentele bancnotelor cunoscute și alegem cea mai apropiată. Amprentele din `src/extra/banknote-refs.json` sunt calculate din scanările bancnotelor românești de pe Wikimedia Commons (domeniu public), față și verso, câte 4 variante (normal, mai întunecat, întors, ușor mărit). În aplicație poți adăuga și amprentele bancnotelor tale („Învăț bancnota”).
 
 Măsurat: 10/10 pe fotografii reale (5, 10, 50, 100 lei — pe masă, din teanc) și 111/112 pe scanări cu perspectivă, lumină slabă/caldă, blur, fundal de lemn și decupaj. Ce nu e bancnotă (mâini, masa goală) iese cu scor 0.08–0.12 față de 0.6–0.85 la bancnote, de aici pragul de 0.4. Doar după culoare nu merge (1/10 pe fotografii reale).
 
