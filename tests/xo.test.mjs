@@ -1,7 +1,7 @@
 // node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as xo from '../xo.js';
+import * as xo from '../src/rules/xo.js';
 
 test('tabla 3×3 are 8 linii', () => {
   assert.equal(xo.LINES.length, 8);

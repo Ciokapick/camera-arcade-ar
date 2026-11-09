@@ -1,8 +1,8 @@
 // node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRoom, reduce, hostTimers, barbutTurn, rpsOutcome, RPS_COUNTDOWN_MS, BOT_SHAKE_MS } from '../game.js';
-import { botMove } from '../ludo.js';
+import { newRoom, reduce, hostTimers, barbutTurn, rpsOutcome, RPS_COUNTDOWN_MS, BOT_SHAKE_MS } from '../src/rules/game.js';
+import { botMove } from '../src/rules/ludo.js';
 
 const room = () => {
   let r = newRoom({ id: 'h', name: 'Denis' });

@@ -1,6 +1,6 @@
 // Simboluri deasupra mâinilor reale; adversarii au mâini articulate și dezvăluie gestul la rezultat.
 import * as THREE from 'three';
-import { makeHand, CAMERA_FOV } from './ar.js';
+import { makeHand, CAMERA_FOV } from '../ar/ar.js';
 import { createVirtualHand } from './virtual-hand.js';
 import { createGestureSymbols } from './rps-symbols.js';
 

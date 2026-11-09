@@ -1,7 +1,7 @@
 // node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as J from '../jenga.js';
+import * as J from '../src/rules/jenga.js';
 
 const at = (slots, level, slot) => slots.findIndex(s => s.level === level && s.slot === slot);
 
