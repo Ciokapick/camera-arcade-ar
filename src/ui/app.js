@@ -1,18 +1,18 @@
 // Interfața: nume → cameră (pe telefonul ăsta sau online) → joc.
 // Starea jocului vine mereu de la gazdă (net.js + game.js); aici doar o arătăm și trimitem acțiuni.
 import * as THREE from 'three';
-import { hostRoom, joinRoom } from './net.js';
-import { COLORS, NOTES, RPS_COUNTDOWN_MS, barbutTurn, jengaTurn, playerById } from './game.js';
-import * as banknotes from './banknotes.js';
-import * as ludo from './ludo.js';
-import { createDice } from './dice.js';
-import { createBoard, SEAT, SIZE as BOARD_SIZE, TOP as TOP_Y } from './board.js';
-import { createXO } from './xo-view.js';
-import { createJenga } from './jenga-view.js';
-import * as jenga from './jenga.js';
-import { openStage, webXRSupported } from './ar.js';
-import { trackHands } from './hands.js';
-import { createRpsScene } from './rps-ar.js';
+import { hostRoom, joinRoom } from '../extra/net.js';
+import { COLORS, NOTES, RPS_COUNTDOWN_MS, barbutTurn, jengaTurn, playerById } from '../rules/game.js';
+import * as banknotes from '../extra/banknotes.js';
+import * as ludo from '../rules/ludo.js';
+import { createDice } from '../scenes/dice.js';
+import { createBoard, SEAT, SIZE as BOARD_SIZE, TOP as TOP_Y } from '../scenes/board.js';
+import { createXO } from '../scenes/xo-view.js';
+import { createJenga } from '../scenes/jenga-view.js';
+import * as jenga from '../rules/jenga.js';
+import { openStage, webXRSupported } from '../ar/ar.js';
+import { trackHands } from '../ar/hands.js';
+import { createRpsScene } from '../scenes/rps-ar.js';
 import { sound, vibrate, celebrate, lost } from './sound.js';
 
 const $ = selector => document.querySelector(selector);

@@ -1,7 +1,7 @@
 // node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as ludo from '../ludo.js';
+import * as ludo from '../src/rules/ludo.js';
 
 const game = (...colors) => ludo.newLudo(colors.map((color, i) => ({ id: `p${i}`, color })));
 

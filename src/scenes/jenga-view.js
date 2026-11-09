@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as CANNON from 'cannon-es';
-import { L, W, H, slotPose, axisOf, collapse } from './jenga.js';
-import { sound } from './sound.js';
+import { L, W, H, slotPose, axisOf, collapse } from '../rules/jenga.js';
+import { sound } from '../ui/sound.js';
 
 function woodTexture(seed) {
   const canvas = document.createElement('canvas');

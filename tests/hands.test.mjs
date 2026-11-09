@@ -1,7 +1,7 @@
 // node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, openness } from '../hands.js';
+import { classify, openness } from '../src/ar/hands.js';
 
 // mână sintetică: încheietura în origine, degetele pe o direcție dată (rotește mâna);
 // întins = vârful la 2, îndoit = vârful la 0.5 (articulația PIP la 1)

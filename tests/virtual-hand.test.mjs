@@ -26,14 +26,15 @@ const hook = registerHooks({ resolve(specifier, context, next) {
 globalThis.addEventListener = () => {};
 globalThis.document = { createElement: () => ({ getContext: () => ({ createRadialGradient: () => ({ addColorStop() {} }), fillRect() {}, beginPath() {}, arc() {}, fill() {}, moveTo() {}, lineTo() {}, stroke() {} }) }) };
 const THREE = await import('three');
-const { createVirtualHand } = await import('../virtual-hand.js');
-const { createGestureSymbols } = await import('../rps-symbols.js');
-const { createDice, topValue } = await import('../dice.js');
+const { createVirtualHand } = await import('../src/scenes/virtual-hand.js');
+const { createGestureSymbols } = await import('../src/scenes/rps-symbols.js');
+const { createDice, topValue } = await import('../src/scenes/dice.js');
 // Renderer fără WebGL; restul scenei folosește aceleași modele și repere ca aplicația.
 globalThis.location = { search: '' };
-const sceneSource = (await fs.readFile(new URL('../rps-ar.js', import.meta.url), 'utf8'))
+const sceneSource = (await fs.readFile(new URL('../src/scenes/rps-ar.js', import.meta.url), 'utf8'))
   .replace('new THREE.WebGLRenderer(', 'new globalThis.RpsTestRenderer(')
-  .replaceAll("from './", `from '${new URL('../', import.meta.url).href}`);
+  .replaceAll("from '../", `from '${new URL('../src/', import.meta.url).href}`)
+  .replaceAll("from './", `from '${new URL('../src/scenes/', import.meta.url).href}`);
 const { createRpsScene } = await import(`data:text/javascript;base64,${Buffer.from(sceneSource).toString('base64')}`);
 hook.deregister();
 

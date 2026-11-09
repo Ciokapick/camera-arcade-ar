@@ -2,7 +2,7 @@
 // doar pentru „prezentări”, apoi date direct între telefoane (sau prin TURN-ul public PeerJS).
 // Gazda ține starea (game.js) și o trimite tuturor după fiecare acțiune; ceilalți trimit doar acțiuni.
 // Fără rețea (online: false) aceeași cameră merge local: joci singur sau cu calculatorul.
-import { newRoom, reduce, hostTimers } from './game.js';
+import { newRoom, reduce, hostTimers } from '../rules/game.js';
 
 const PEER_URL = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/+esm';
 const PREFIX = 'camera-arcade-v1-';

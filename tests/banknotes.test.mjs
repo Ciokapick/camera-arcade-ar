@@ -2,9 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { classify, MIN_SCORE } from '../banknotes.js';
+import { classify, MIN_SCORE } from '../src/extra/banknotes.js';
 
-const refs = JSON.parse(fs.readFileSync(new URL('../banknote-refs.json', import.meta.url)));
+const refs = JSON.parse(fs.readFileSync(new URL('../src/extra/banknote-refs.json', import.meta.url)));
 
 test('amprentele de bază: toate cele 8 bancnote, față și verso, câte 4 variante', () => {
   assert.deepEqual([...new Set(refs.map(r => r.value))].sort((a, b) => a - b), [1, 5, 10, 20, 50, 100, 200, 500]);

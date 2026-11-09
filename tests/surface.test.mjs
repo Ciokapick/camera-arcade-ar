@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tableHeight } from '../surface.js';
+import { tableHeight } from '../src/ar/surface.js';
 
 // zgomot determinist
 let t = 7;

@@ -21,7 +21,7 @@ const LIB = path.join(__dirname, '.libs');
   // spre ea trece deasupra și nimerește nivelul de sus — aplicația apucă (corect) piesa pe care o vezi.
   const result = await page.evaluate(async ({ level, slot, aimOff }) => {
     const THREE = await import('three');
-    const { makeHand } = await import('./ar.js');
+    const { makeHand } = await import('./src/ar/ar.js');
     const st = window.__stage, cam = st.camera, canvas = document.querySelector('#stage-root canvas');
     const W = canvas.clientWidth, H = canvas.clientHeight;
     const tower = st.content.group.children[0];

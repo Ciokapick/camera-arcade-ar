@@ -9,7 +9,7 @@
 // Măsurat: 10/10 pe fotografii reale (5, 10, 50, 100 lei; pe masă, din teanc), 111/112 pe scanări cu perspectivă,
 // lumină slabă/caldă, blur, fundal de lemn, decupaj. Ce nu e bancnotă (mâini, masa goală) iese cu scor 0.08–0.12,
 // bancnotele 0.6–0.85 — de-aici pragul de 0.4. Doar culoarea nu merge (1/10 pe fotografii reale).
-import { NOTES } from './game.js';
+import { NOTES } from '../rules/game.js';
 
 const MEDIAPIPE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 const EMBEDDER = 'https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite';

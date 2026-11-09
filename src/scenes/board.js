@@ -1,8 +1,8 @@
 // Tabla 3D „Nu te supăra, frate”: grilă 11×11, traseu de 40 de căsuțe, pioni animați pas cu pas.
 // Totul în metri, centrul tablei în origine, fața tablei la y = TOP.
 import * as THREE from 'three';
-import { sound } from './sound.js';
-import { COLORS, YARD, TRACK, square, COLOR_HEX as HEX } from './ludo.js';
+import { sound } from '../ui/sound.js';
+import { COLORS, YARD, TRACK, square, COLOR_HEX as HEX } from '../rules/ludo.js';
 import { createDice } from './dice.js';
 
 export const CELL = 0.026;
